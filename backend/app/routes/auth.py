@@ -4,6 +4,9 @@ from werkzeug.security import generate_password_hash
 from app.database import db
 from app.models.user import User
 from app.models.role import Role
+from werkzeug.security import generate_password_hash, check_password_hash
+from app.auth.jwt import make_token
+
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -53,3 +56,44 @@ def register():
         "message": "User created",
         "user": user.to_dict()
     }), 201
+
+
+
+
+@bp.post("/login")
+def login():
+    data = request.get_json(silent=True) or {}
+
+    email = {data.get("email") or ""}.strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error":"email and password are required"})
+
+    user = User.quer.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error":"invalid credentials"}),401
+
+    if not user.is_active:
+        return jsonify({"error":"user is inactive"}), 403
+
+    if not check_password_hash(user.password_hash,password):
+        return jsonify({"error":"invalid credentials"}), 401
+
+
+    #Role tablosundan key al (TEACHER/CLIENT/ADMIN)
+    role_key = None
+
+    if getattr(user,"role",None) is not None:
+        role_key = user.role.key
+
+    else:
+        role = Role.query.get(user.role_id)
+        role_key = role.key if role else "CLIENT"
+    
+    token = make_token(user.id,role_key)
+
+    return jsonify({
+    "token": token ,
+    "user": user.to_dict(),
+}), 200

@@ -1,17 +1,18 @@
 from datetime import datetime
-
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.exc import IntegrityError
 
 from app.database import db
 from app.models.lesson_session import LessonSession, SessionMode, SessionStatus
+from app.models.student import Student
+from app.models.enrollment import Enrollment
+
+from app.auth.require_auth import require_auth
 from app.authz import (
     require_teacher_for_session,
     require_client_for_session,
     require_owner_for_session,
 )
-
-from app.auth.require_auth import require_auth
 
 bp = Blueprint("lesson_sessions", __name__, url_prefix="/api/lesson-sessions")
 
@@ -94,6 +95,7 @@ ALLOWED_TRANSITIONS = {
 
 # ---------- routes ----------
 @bp.get("")
+@require_auth
 def list_lesson_sessions():
     student_id = request.args.get("student_id", type=int)
     teacher_user_id = request.args.get("teacher_user_id", type=int)
@@ -101,28 +103,68 @@ def list_lesson_sessions():
 
     q = LessonSession.query
 
-    if g.role == "TEACHER":
+    if g.role == "ADMIN":
+        if student_id:
+            q = q.filter(LessonSession.student_id == student_id)
+        if teacher_user_id:
+            q = q.filter(LessonSession.teacher_user_id == teacher_user_id)
+    elif g.role == "TEACHER":
+        #teacher sadece kendi dersleri
         q = q.filter(LessonSession.teacher_user_id == g.user_id)
 
         if teacher_user_id and teacher_user_id != g.user_id:
-            return jsonify({"message":"forbidden_filter"}), 403
+            return jsonify({"message": "forbidden_filter"}), 403
 
+
+        #Student id verildiğinde enrollment check
+        if student_id:
+            ok = Enrollment.query.filter_by(
+                teacher_user_id = g.user_id,
+                student_id = student_id
+            ).first()
+
+            if not ok:
+                return jsonify({"message":"forbidden_student"})
+
+            q = q.filter(LessonSession.student_id == student_id)
+    
     elif g.role == "CLIENT":
-        q = q.join(student)
+        #kendi profilini görür
+        me_student = Student.query.filter(client_user_id = g.user_id).first()
+        if not me_student:
+            return jsonify({"message":"student_profile_not_found"}),404
 
+        #sadece kendi dersleri
+        q = q.filter(LessonSession.student_id == me_student.id)
 
+        #clientın enrollment teacherları
+        allowed_teacher_ids = [
+            e.teacher_user_id
+            for e in Enrollment.query.filter_by(student_id = me_student.id).all()
 
+        ]
+        
+        if not allowed_teacher_ids:
+            #enrollment yoksa göremez
+            q = q.filter(db.text("1=0"))
+        else:
+            q = q.filter(LessonSession.teacher_user_id.in_(allowed_teacher_ids))
 
-    if student_id:
-        q = q.filter(LessonSession.student_id == student_id)
-    if teacher_user_id:
-        q = q.filter(LessonSession.teacher_user_id == teacher_user_id)
+        # client teacher_user_id filtresi verirse allowed içinde olmalı
+        if teacher_user_id:
+            if teacher_user_id not in allowed_teacher_ids:
+                return jsonigy({"message":"forbidden_teacher"}), 403
+            q = q.filter(LessonSession.teacher_user_id == teacher_user_id)
+
+        if student_id and student_id != me_student.id:
+            return jsonify ({"message":"forbidden_student"}),403
+    else:
+        return jsonify({"message":"forbidden" }),403
 
     if status_raw:
         parsed = parse_enum(SessionStatus, status_raw, "status")
         if isinstance(parsed, tuple):
             return parsed
-        status_enum = parsed
         q = q.filter(LessonSession.status == status_enum)
 
     sessions = q.order_by(LessonSession.scheduled_start.desc()).all()
@@ -130,6 +172,7 @@ def list_lesson_sessions():
 
 
 @bp.get("/<int:session_id>")
+@require_auth
 @require_owner_for_session
 def get_lesson_session(session_id):
     # decorator session'ı buldu ve g.session'a koydu varsayıyoruz
@@ -138,18 +181,22 @@ def get_lesson_session(session_id):
 
 
 @bp.post("")
+@require_auth
 def create_lesson_session():
 
-    data = request.get_json(silent=True)  # force yok!
+    if g.role not in {"TEACHER","ADMIN"}:
+        return jsonify({"message":"forbidden"}),403
+    
+    data = request.get_json(silent=True)
     if data is None:
         raw = request.get_data(cache=True, as_text=True)
         return jsonify({
-    "message": "invalid or missing JSON body",
-    "content_type": request.headers.get("Content-Type"),
-    "content_length": request.content_length,
-    "transfer_encoding": request.headers.get("Transfer-Encoding"),
-    "raw_len": len(raw),
-    "raw_first100": raw[:100],
+            "message": "invalid or missing JSON body",
+            "content_type": request.headers.get("Content-Type"),
+            "content_length": request.content_length,
+            "transfer_encoding": request.headers.get("Transfer-Encoding"),
+            "raw_len": len(raw),
+            "raw_first100": raw[:100],
 }), 400
 
 
@@ -170,12 +217,27 @@ def create_lesson_session():
     student_id_parsed = parse_int(student_id, "student_id", required=True)
     if isinstance(student_id_parsed, tuple):
         return student_id_parsed
+
     teacher_user_id_parsed = parse_int(teacher_user_id, "teacher_user_id", required=True)
     if isinstance(teacher_user_id_parsed, tuple):
         return teacher_user_id_parsed
+
     created_by_user_id_parsed = parse_int(created_by_user_id, "created_by_user_id", required=True)
     if isinstance(created_by_user_id_parsed, tuple):
         return created_by_user_id_parsed
+    
+      # Teacher rolündeyse: teacher_user_id kendi id'si olmak zorunda (spoof engeli)
+    if g.role == "TEACHER" and teacher_user_id_parsed != g.user_id:
+        return jsonify({"message":"forbidden_teacher"}),403
+
+    if g.role == "TEACHER":
+        ok = Enrollment.query.filter_by(
+            teacher_user_id = g.user_id,
+            student_id = student_id_parsed
+        ).first()
+
+        if not ok:
+            return jsonify({"message":"forbidden_student"}),403
 
     scheduled_start = parse_iso_datetime(scheduled_start_raw, "scheduled_start", required=True)
     if isinstance(scheduled_start, tuple):
@@ -228,11 +290,11 @@ def create_lesson_session():
 
 
 @bp.patch("/<int:session_id>")
+@require_auth
 @require_owner_for_session
 def update_lesson_session(session_id):
     # decorator session'ı buldu ve yetkiyi doğruladı varsayıyoruz
     s = g.session
-
     data = request.get_json(silent=True) or {}
 
     # status update (manual: only CANCELLED/MISSED)
@@ -295,6 +357,7 @@ def update_lesson_session(session_id):
 
 
 @bp.patch("/<int:session_id>/teacher-mark")
+@require_auth
 @require_teacher_for_session
 def teacher_mark(session_id):
     s = g.session
@@ -332,6 +395,7 @@ def teacher_mark(session_id):
 
 
 @bp.patch("/<int:session_id>/client-mark")
+@require_auth
 @require_client_for_session
 def client_mark(session_id):
     s = g.session
