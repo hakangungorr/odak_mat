@@ -13,7 +13,8 @@ class User(BaseModel):
     role_id = db.Column(
         db.Integer,
         db.ForeignKey("roles.id"),
-        nullable =False
+        nullable =False,
+        index = True,
     )
     role = db.relationship("Role", lazy="joined")
     is_active = db.Column(db.Boolean, nullable=False, default=True)

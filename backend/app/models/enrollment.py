@@ -17,5 +17,5 @@ class Enrollment(BaseModel):
     status = db.Column(db.Enum(EnrollmentStatus), nullable=False, default=EnrollmentStatus.ACTIVE)
 
     __table_args__ = (
-        db.UniqueConstraint("teacher_user_id", "student_id", name="uq_teacher_student"),
-    )
+    db.UniqueConstraint("student_id", name="uq_enrollment_student"),
+)

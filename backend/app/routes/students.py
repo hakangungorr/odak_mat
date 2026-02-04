@@ -1,30 +1,80 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from app.database import db
 from app.models.student import Student
+from app.models.enrollment import Enrollment
+from app.auth.require_auth import require_auth
 
-bp = Blueprint("students", __name__, url_prefix="/api/students")
+bp = Blueprint("students", __name__)
 
 
-@bp.get("")
+def get_my_student_profile():
+    return Student.query.filter_by(user_id=g.user_id).first()
+
+
+@bp.get("/")
+@require_auth
 def list_students():
-    students = Student.query.all()
-    return jsonify([s.to_dict() for s in students]), 200
+    """
+    ADMIN: tüm öğrenciler
+    TEACHER: sadece kendisine atanmış öğrenciler
+    STUDENT: sadece kendi profili (liste yerine 1 kayıt döner)
+    """
+    if g.role == "ADMIN":
+        students = Student.query.order_by(Student.id.desc()).all()
+        return jsonify([s.to_dict() for s in students]), 200
+
+    if g.role == "TEACHER":
+        # teacher'ın öğrencileri: enrollment üzerinden
+        student_ids = [
+            e.student_id
+            for e in Enrollment.query.filter_by(teacher_user_id=g.user_id).all()
+        ]
+        if not student_ids:
+            return jsonify([]), 200
+        students = Student.query.filter(Student.id.in_(student_ids)).order_by(Student.id.desc()).all()
+        return jsonify([s.to_dict() for s in students]), 200
+
+    if g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        return jsonify([me.to_dict()]), 200  # liste endpoint'i ama tek kayıt
+
+    return jsonify({"message": "forbidden"}), 403
 
 
-@bp.post("")
+@bp.post("/")
+@require_auth
 def create_student():
+    """
+    SADECE ADMIN öğrenci oluşturur.
+    Öğrencinin login hesabı user_id ile bağlanır.
+    """
+    if g.role != "ADMIN":
+        return jsonify({"message": "forbidden"}), 403
+
     data = request.get_json(silent=True) or {}
 
     full_name = (data.get("full_name") or "").strip()
     grade = data.get("grade")
-    client_user_id = data.get("client_user_id")
+    user_id = data.get("user_id")
 
     if not full_name:
         return jsonify({"message": "full_name boş olamaz"}), 400
-    if client_user_id is None:
-        return jsonify({"message": "client_user_id gerekli"}), 400
+    if user_id is None:
+        return jsonify({"message": "user_id gerekli"}), 400
 
-    student = Student(full_name=full_name, grade=grade, client_user_id=client_user_id)
+    try:
+        user_id = int(user_id)
+    except Exception:
+        return jsonify({"message": "user_id must be integer"}), 400
+
+    # 1 user -> 1 student profili
+    exists = Student.query.filter_by(user_id=user_id).first()
+    if exists:
+        return jsonify({"message": "student profile already exists for this user_id", "student": exists.to_dict()}), 409
+
+    student = Student(full_name=full_name, grade=grade, user_id=user_id)
 
     try:
         db.session.add(student)
@@ -35,21 +85,69 @@ def create_student():
 
     return jsonify(student.to_dict()), 201
 
+
+@bp.get("/me")
+@require_auth
+def get_my_student():
+    """
+    STUDENT kendi profilini buradan net şekilde alır.
+    """
+    if g.role != "STUDENT":
+        return jsonify({"message": "forbidden"}), 403
+
+    me = get_my_student_profile()
+    if not me:
+        return jsonify({"message": "student_profile_not_found"}), 404
+    return jsonify(me.to_dict()), 200
+
+
 @bp.get("/<int:student_id>")
-def get_student(student_id):
-    student = Student.query.get(student_id)
-    if not student:
-        return jsonify ({"message": "Student not found"}) , 404
-    return jsonify(student.to_dict()) ,200
-
-
-
-
-@bp.patch("/<int:student_id>")
-def update_student(student_id):
+@require_auth
+def get_student(student_id: int):
     student = Student.query.get(student_id)
     if not student:
         return jsonify({"message": "Student not found"}), 404
+
+    if g.role == "ADMIN":
+        return jsonify(student.to_dict()), 200
+
+    if g.role == "TEACHER":
+        ok = Enrollment.query.filter_by(student_id=student_id, teacher_user_id=g.user_id).first()
+        if not ok:
+            return jsonify({"message": "forbidden"}), 403
+        return jsonify(student.to_dict()), 200
+
+    if g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        if me.id != student_id:
+            return jsonify({"message": "forbidden"}), 403
+        return jsonify(student.to_dict()), 200
+
+    return jsonify({"message": "forbidden"}), 403
+
+
+@bp.patch("/<int:student_id>")
+@require_auth
+def update_student(student_id: int):
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"message": "Student not found"}), 404
+
+    # ADMIN her şeyi güncelleyebilir
+    if g.role == "ADMIN":
+        pass
+    # STUDENT sadece kendi profilini güncelleyebilir
+    elif g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        if me.id != student_id:
+            return jsonify({"message": "forbidden"}), 403
+    else:
+        # TEACHER öğrenci profilini değiştiremesin (senin kurala uygun)
+        return jsonify({"message": "forbidden"}), 403
 
     data = request.get_json(silent=True) or {}
 
@@ -61,6 +159,18 @@ def update_student(student_id):
 
     if "grade" in data:
         student.grade = data.get("grade")
+
+    # admin isterse student.user_id'yi de değiştirebilir (opsiyonel)
+    if g.role == "ADMIN" and "user_id" in data:
+        try:
+            new_user_id = int(data.get("user_id"))
+        except Exception:
+            return jsonify({"message": "user_id must be integer"}), 400
+
+        other = Student.query.filter_by(user_id=new_user_id).first()
+        if other and other.id != student.id:
+            return jsonify({"message": "user_id already bound to another student"}), 409
+        student.user_id = new_user_id
 
     try:
         db.session.commit()

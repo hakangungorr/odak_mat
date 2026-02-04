@@ -7,9 +7,11 @@ class Student(BaseModel):
     full_name = db.Column(db.String(120), nullable=False)
     grade = db.Column(db.Integer, nullable=True)
 
-    client_user_id = db.Column(
+    # öğrenci login hesabı
+    user_id = db.Column(
         db.Integer,
         db.ForeignKey("users.id"),
         nullable=False,
+        unique=True,
         index=True
     )

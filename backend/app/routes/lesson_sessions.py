@@ -5,36 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from app.database import db
 from app.models.lesson_session import LessonSession, SessionMode, SessionStatus
 from app.models.student import Student
-from app.models.enrollment import Enrollment
-
+from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.auth.require_auth import require_auth
-from app.authz import (
-    require_teacher_for_session,
-    require_client_for_session,
-    require_owner_for_session,
-)
 
-bp = Blueprint("lesson_sessions", __name__, url_prefix="/api/lesson-sessions")
+bp = Blueprint("lesson_sessions", __name__)
 
-
-
-@bp.post("/_debug-echo")
-def debug_echo():
-    raw = request.get_data(cache=True, as_text=True)
-    return jsonify({
-        "content_type": request.headers.get("Content-Type"),
-        "content_length": request.content_length,
-        "raw_len": len(raw),
-        "raw_first100": raw[:100],
-        "json": request.get_json(silent=True),
-    }), 200
 
 # ---------- helpers ----------
 def parse_enum(enum_cls, raw, field_name: str):
-    """
-    raw -> enum_cls(...) dönüşümü.
-    Hatalıysa (json, status_code) döner.
-    """
     try:
         v = str(raw).strip().upper()
         return enum_cls(v)
@@ -69,17 +47,32 @@ def parse_iso_datetime(raw, field_name: str, required: bool = False):
         }), 400
 
 
+def get_my_student_profile():
+    """
+    STUDENT kullanıcısının Student kaydı.
+    Senin schema: students.client_user_id -> users.id
+    """
+    return Student.query.filter_by(client_user_id=g.user_id).first()
+
+
+def enrollment_teacher_for_student(student_id: int):
+    return [
+        e.teacher_user_id
+        for e in Enrollment.query.filter_by(student_id=student_id, status=EnrollmentStatus.ACTIVE).all()
+    ]
+
+
 def recalc_status(s: LessonSession) -> SessionStatus:
-    # terminal statüler: dokunma
+    # CANCELLED/MISSED sabit
     if s.status in {SessionStatus.CANCELLED, SessionStatus.MISSED}:
         return s.status
 
     teacher_ok = bool(s.teacher_marked_at)
-    client_ok = bool(s.client_marked_at)
+    student_ok = bool(s.student_marked_at)
 
-    if teacher_ok and client_ok:
+    if teacher_ok and student_ok:
         return SessionStatus.COMPLETED
-    if teacher_ok or client_ok:
+    if teacher_ok or student_ok:
         return SessionStatus.PENDING_CONFIRMATION
     return SessionStatus.PLANNED
 
@@ -93,78 +86,102 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+def load_session_or_404(session_id: int):
+    s = LessonSession.query.get(session_id)
+    if not s:
+        return None, (jsonify({"message": "LessonSession not found"}), 404)
+    return s, None
+
+
+def require_owner_for_view(s: LessonSession):
+    """
+    VIEW owner:
+      ADMIN: ok
+      TEACHER: kendi session'ı
+      STUDENT: kendi student profiline ait session
+    """
+    if g.role == "ADMIN":
+        return None
+
+    if g.role == "TEACHER":
+        if s.teacher_user_id != g.user_id:
+            return jsonify({"message": "forbidden"}), 403
+        return None
+
+    if g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        if s.student_id != me.id:
+            return jsonify({"message": "forbidden"}), 403
+        return None
+
+    return jsonify({"message": "forbidden"}), 403
+
+
 # ---------- routes ----------
-@bp.get("")
+@bp.get("/")
 @require_auth
 def list_lesson_sessions():
-    student_id = request.args.get("student_id", type=int)
+    """
+    ADMIN: tüm dersler (filtre serbest)
+    TEACHER: sadece kendi dersleri (filtre kısıtlı)
+    STUDENT: sadece kendi dersleri (filtre kısıtlı)
+    """
     teacher_user_id = request.args.get("teacher_user_id", type=int)
+    student_id = request.args.get("student_id", type=int)
     status_raw = request.args.get("status", type=str)
 
     q = LessonSession.query
 
     if g.role == "ADMIN":
-        if student_id:
-            q = q.filter(LessonSession.student_id == student_id)
         if teacher_user_id:
             q = q.filter(LessonSession.teacher_user_id == teacher_user_id)
+        if student_id:
+            q = q.filter(LessonSession.student_id == student_id)
+
     elif g.role == "TEACHER":
-        #teacher sadece kendi dersleri
         q = q.filter(LessonSession.teacher_user_id == g.user_id)
 
         if teacher_user_id and teacher_user_id != g.user_id:
             return jsonify({"message": "forbidden_filter"}), 403
 
-
-        #Student id verildiğinde enrollment check
         if student_id:
             ok = Enrollment.query.filter_by(
-                teacher_user_id = g.user_id,
-                student_id = student_id
+                teacher_user_id=g.user_id,
+                student_id=student_id,
+                status=EnrollmentStatus.ACTIVE
             ).first()
-
             if not ok:
-                return jsonify({"message":"forbidden_student"})
-
+                return jsonify({"message": "forbidden_student"}), 403
             q = q.filter(LessonSession.student_id == student_id)
-    
-    elif g.role == "CLIENT":
-        #kendi profilini görür
-        me_student = Student.query.filter(client_user_id = g.user_id).first()
-        if not me_student:
-            return jsonify({"message":"student_profile_not_found"}),404
 
-        #sadece kendi dersleri
-        q = q.filter(LessonSession.student_id == me_student.id)
+    elif g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
 
-        #clientın enrollment teacherları
-        allowed_teacher_ids = [
-            e.teacher_user_id
-            for e in Enrollment.query.filter_by(student_id = me_student.id).all()
+        q = q.filter(LessonSession.student_id == me.id)
 
-        ]
-        
-        if not allowed_teacher_ids:
-            #enrollment yoksa göremez
-            q = q.filter(db.text("1=0"))
-        else:
-            q = q.filter(LessonSession.teacher_user_id.in_(allowed_teacher_ids))
-
-        # client teacher_user_id filtresi verirse allowed içinde olmalı
         if teacher_user_id:
-            if teacher_user_id not in allowed_teacher_ids:
-                return jsonigy({"message":"forbidden_teacher"}), 403
+            my_teacher = enrollment_teacher_for_student(me.id)
+            if not my_teacher:
+                return jsonify({"message": "teacher_not_assigned"}), 409
+            if teacher_user_id != my_teacher:
+                return jsonify({"message": "forbidden_teacher"}), 403
             q = q.filter(LessonSession.teacher_user_id == teacher_user_id)
 
-        if student_id and student_id != me_student.id:
-            return jsonify ({"message":"forbidden_student"}),403
+        if student_id and student_id != me.id:
+            return jsonify({"message": "forbidden_student"}), 403
+
     else:
-        return jsonify({"message":"forbidden" }),403
+        return jsonify({"message": "forbidden"}), 403
 
     if status_raw:
         parsed = parse_enum(SessionStatus, status_raw, "status")
         if isinstance(parsed, tuple):
             return parsed
+        status_enum = parsed
         q = q.filter(LessonSession.status == status_enum)
 
     sessions = q.order_by(LessonSession.scheduled_start.desc()).all()
@@ -173,71 +190,35 @@ def list_lesson_sessions():
 
 @bp.get("/<int:session_id>")
 @require_auth
-@require_owner_for_session
-def get_lesson_session(session_id):
-    # decorator session'ı buldu ve g.session'a koydu varsayıyoruz
-    s = g.session
+def get_lesson_session(session_id: int):
+    s, err = load_session_or_404(session_id)
+    if err:
+        return err
+
+    owner_err = require_owner_for_view(s)
+    if owner_err:
+        return owner_err
+
     return jsonify(s.to_dict()), 200
 
 
-@bp.post("")
+@bp.post("/")
 @require_auth
 def create_lesson_session():
+    """
+    ✅ TEACHER ve ADMIN oluşturabilir.
+    ❌ STUDENT oluşturamaz.
+    Kurala göre: sadece öğretmen ders planlar.
+    """
+    if g.role not in {"TEACHER", "ADMIN"}:
+        return jsonify({"message": "forbidden"}), 403
 
-    if g.role not in {"TEACHER","ADMIN"}:
-        return jsonify({"message":"forbidden"}),403
-    
-    data = request.get_json(silent=True)
-    if data is None:
-        raw = request.get_data(cache=True, as_text=True)
-        return jsonify({
-            "message": "invalid or missing JSON body",
-            "content_type": request.headers.get("Content-Type"),
-            "content_length": request.content_length,
-            "transfer_encoding": request.headers.get("Transfer-Encoding"),
-            "raw_len": len(raw),
-            "raw_first100": raw[:100],
-}), 400
+    data = request.get_json(silent=True) or {}
 
-
-
-    # required fields
-    student_id = data.get("student_id")
-    teacher_user_id = data.get("teacher_user_id")
-    created_by_user_id = data.get("created_by_user_id")
     scheduled_start_raw = data.get("scheduled_start")
     duration_min_raw = data.get("duration_min")
-
-    # optional fields
     mode_raw = data.get("mode")
     topic = data.get("topic")
-    status_raw = data.get("status")
-
-    # ---- validation ----
-    student_id_parsed = parse_int(student_id, "student_id", required=True)
-    if isinstance(student_id_parsed, tuple):
-        return student_id_parsed
-
-    teacher_user_id_parsed = parse_int(teacher_user_id, "teacher_user_id", required=True)
-    if isinstance(teacher_user_id_parsed, tuple):
-        return teacher_user_id_parsed
-
-    created_by_user_id_parsed = parse_int(created_by_user_id, "created_by_user_id", required=True)
-    if isinstance(created_by_user_id_parsed, tuple):
-        return created_by_user_id_parsed
-    
-      # Teacher rolündeyse: teacher_user_id kendi id'si olmak zorunda (spoof engeli)
-    if g.role == "TEACHER" and teacher_user_id_parsed != g.user_id:
-        return jsonify({"message":"forbidden_teacher"}),403
-
-    if g.role == "TEACHER":
-        ok = Enrollment.query.filter_by(
-            teacher_user_id = g.user_id,
-            student_id = student_id_parsed
-        ).first()
-
-        if not ok:
-            return jsonify({"message":"forbidden_student"}),403
 
     scheduled_start = parse_iso_datetime(scheduled_start_raw, "scheduled_start", required=True)
     if isinstance(scheduled_start, tuple):
@@ -249,7 +230,6 @@ def create_lesson_session():
     if duration_min <= 0:
         return jsonify({"message": "duration_min must be > 0"}), 400
 
-    # ---- enum parsing ----
     if mode_raw:
         parsed = parse_enum(SessionMode, mode_raw, "mode")
         if isinstance(parsed, tuple):
@@ -258,18 +238,53 @@ def create_lesson_session():
     else:
         mode_enum = SessionMode.ONLINE
 
-    if status_raw:
-        parsed = parse_enum(SessionStatus, status_raw, "status")
-        if isinstance(parsed, tuple):
-            return parsed
-        status_enum = parsed
+    created_by_user_id = g.user_id
+
+    if g.role == "ADMIN":
+        student_id = data.get("student_id")
+        teacher_user_id = data.get("teacher_user_id")
+
+        student_id_parsed = parse_int(student_id, "student_id", required=True)
+        if isinstance(student_id_parsed, tuple):
+            return student_id_parsed
+
+        teacher_user_id_parsed = parse_int(teacher_user_id, "teacher_user_id", required=True)
+        if isinstance(teacher_user_id_parsed, tuple):
+            return teacher_user_id_parsed
+
+        # Admin status set edebilir (opsiyonel)
+        status_raw = data.get("status")
+        if status_raw:
+            parsed = parse_enum(SessionStatus, status_raw, "status")
+            if isinstance(parsed, tuple):
+                return parsed
+            status_enum = parsed
+        else:
+            status_enum = SessionStatus.PLANNED
+
     else:
+        # TEACHER
+        teacher_user_id_parsed = g.user_id
+
+        student_id = data.get("student_id")
+        student_id_parsed = parse_int(student_id, "student_id", required=True)
+        if isinstance(student_id_parsed, tuple):
+            return student_id_parsed
+
+        ok = Enrollment.query.filter_by(
+            teacher_user_id=g.user_id,
+            student_id=student_id_parsed,
+            status=EnrollmentStatus.ACTIVE
+        ).first()
+        if not ok:
+            return jsonify({"message": "forbidden_student"}), 403
+
         status_enum = SessionStatus.PLANNED
 
     s = LessonSession(
         student_id=student_id_parsed,
         teacher_user_id=teacher_user_id_parsed,
-        created_by_user_id=created_by_user_id_parsed,
+        created_by_user_id=created_by_user_id,
         scheduled_start=scheduled_start,
         duration_min=duration_min,
         mode=mode_enum,
@@ -291,13 +306,25 @@ def create_lesson_session():
 
 @bp.patch("/<int:session_id>")
 @require_auth
-@require_owner_for_session
-def update_lesson_session(session_id):
-    # decorator session'ı buldu ve yetkiyi doğruladı varsayıyoruz
-    s = g.session
+def update_lesson_session(session_id: int):
+    """
+    ✅ ADMIN: update
+    ✅ TEACHER: sadece kendi dersini update
+    ❌ STUDENT: update edemez (planlama teacher işi)
+    """
+    s, err = load_session_or_404(session_id)
+    if err:
+        return err
+
+    if g.role not in {"TEACHER", "ADMIN"}:
+        return jsonify({"message": "forbidden"}), 403
+
+    if g.role == "TEACHER" and s.teacher_user_id != g.user_id:
+        return jsonify({"message": "forbidden"}), 403
+
     data = request.get_json(silent=True) or {}
 
-    # status update (manual: only CANCELLED/MISSED)
+    # status manual (only CANCELLED/MISSED)
     if "status" in data:
         raw = (data.get("status") or "").strip().upper()
         parsed = parse_enum(SessionStatus, raw, "status")
@@ -306,9 +333,7 @@ def update_lesson_session(session_id):
         new_status = parsed
 
         if new_status not in {SessionStatus.CANCELLED, SessionStatus.MISSED}:
-            return jsonify({
-                "message": "status can only be set to CANCELLED or MISSED manually"
-            }), 409
+            return jsonify({"message": "status can only be set to CANCELLED or MISSED manually"}), 409
 
         allowed = ALLOWED_TRANSITIONS.get(s.status, set())
         if new_status not in allowed:
@@ -321,7 +346,6 @@ def update_lesson_session(session_id):
 
         s.status = new_status
 
-    # optional updates
     if "topic" in data:
         s.topic = data.get("topic")
 
@@ -358,15 +382,21 @@ def update_lesson_session(session_id):
 
 @bp.patch("/<int:session_id>/teacher-mark")
 @require_auth
-@require_teacher_for_session
-def teacher_mark(session_id):
-    s = g.session
+def teacher_mark(session_id: int):
+    s, err = load_session_or_404(session_id)
+    if err:
+        return err
+
+    # only TEACHER owner or ADMIN
+    if g.role not in {"TEACHER", "ADMIN"}:
+        return jsonify({"message": "forbidden"}), 403
+    if g.role == "TEACHER" and s.teacher_user_id != g.user_id:
+        return jsonify({"message": "forbidden"}), 403
+
     if s.status in {SessionStatus.CANCELLED, SessionStatus.MISSED}:
         return jsonify({"message": "cannot mark a cancelled/missed session"}), 409
 
     data = request.get_json(silent=True) or {}
-
-    # destek: eski key'ler
     rating = data.get("teacher_rating_to_student")
     note = data.get("teacher_mark_note")
 
@@ -394,39 +424,48 @@ def teacher_mark(session_id):
     return jsonify(s.to_dict()), 200
 
 
-@bp.patch("/<int:session_id>/client-mark")
+@bp.patch("/<int:session_id>/student-mark")
 @require_auth
-@require_client_for_session
-def client_mark(session_id):
-    s = g.session
+def student_mark(session_id: int):
+    """
+    Student kendi dersi için mark atar.
+    """
+    s, err = load_session_or_404(session_id)
+    if err:
+        return err
+
+    # only STUDENT owner or ADMIN
+    if g.role not in {"STUDENT", "ADMIN"}:
+        return jsonify({"message": "forbidden"}), 403
+
+    if g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        if s.student_id != me.id:
+            return jsonify({"message": "forbidden"}), 403
+
     if s.status in {SessionStatus.CANCELLED, SessionStatus.MISSED}:
         return jsonify({"message": "cannot mark a cancelled/missed session"}), 409
 
     data = request.get_json(silent=True) or {}
 
-    # yeni key'ler (tutarlı)
-    rating = data.get("client_rating_to_teacher")
-    note = data.get("client_note")
-
-    # geriye dönük uyumluluk: eski key'ler gelirse de kabul et
-    if rating is None:
-        rating = data.get("rating")
-    if note is None:
-        note = data.get("note")
+    rating = data.get("student_rating_to_teacher") or data.get("rating")
+    note = data.get("student_note") or data.get("note")
 
     if rating is not None:
-        parsed = parse_int(rating, "client_rating_to_teacher", required=False)
+        parsed = parse_int(rating, "student_rating_to_teacher", required=False)
         if isinstance(parsed, tuple):
             return parsed
         rating_int = parsed
         if rating_int < 1 or rating_int > 5:
             return jsonify({"message": "rating must be 1-5"}), 400
-        s.client_rating_to_teacher = rating_int
+        s.student_rating_to_teacher = rating_int
 
     if note is not None:
-        s.client_note = str(note).strip()
+        s.student_note = str(note).strip()
 
-    s.client_marked_at = datetime.utcnow()
+    s.student_marked_at = datetime.utcnow()
     s.status = recalc_status(s)
 
     try:

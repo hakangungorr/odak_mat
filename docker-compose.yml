@@ -8,9 +8,14 @@ services:
     container_name: odak_app
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     depends_on:
       - db
     environment:
+      JWT_SECRET: "odakmat_super_secret_key_32_chars_min!!"
+      JWT_ALG: "HS256"
+      JWT_EXPIRE_MIN: 1440
       FLASK_APP: main.py
       DATABASE_URL: postgresql+psycopg2://odak:odak123@db:5432/odakdb
     volumes:
