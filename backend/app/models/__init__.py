@@ -2,6 +2,9 @@ from .user import User
 from .student import Student
 from .enrollment import Enrollment, EnrollmentStatus
 from .lesson_session import LessonSession, SessionMode , SessionStatus
+from .lesson_report import LessonReport
+from .homework import Homework, HomeworkStatus
+from .package import Package, StudentPackage, PackageStatus
 from app.models.role import Role
 
 __all__ = [
@@ -12,6 +15,12 @@ __all__ = [
     "EnrollmentStatus",
     "LessonSession",
     "SessionMode",
-    "SessionStatus"
+    "SessionStatus",
+    "LessonReport",
+    "Homework",
+    "HomeworkStatus",
+    "Package",
+    "StudentPackage",
+    "PackageStatus",
 ]
 

@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.exc import IntegrityError
 
 from app.database import db
 from app.models.lesson_session import LessonSession, SessionMode, SessionStatus
+from app.models.package import StudentPackage, PackageStatus
 from app.models.student import Student
 from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.auth.require_auth import require_auth
@@ -52,14 +53,12 @@ def get_my_student_profile():
     STUDENT kullanıcısının Student kaydı.
     Senin schema: students.client_user_id -> users.id
     """
-    return Student.query.filter_by(client_user_id=g.user_id).first()
+    return Student.query.filter_by(user_id=g.user_id).first()
 
 
 def enrollment_teacher_for_student(student_id: int):
-    return [
-        e.teacher_user_id
-        for e in Enrollment.query.filter_by(student_id=student_id, status=EnrollmentStatus.ACTIVE).all()
-    ]
+    e = Enrollment.query.filter_by(student_id=student_id, status=EnrollmentStatus.ACTIVE).first()
+    return e.teacher_user_id if e else None
 
 
 def recalc_status(s: LessonSession) -> SessionStatus:
@@ -75,6 +74,31 @@ def recalc_status(s: LessonSession) -> SessionStatus:
     if teacher_ok or student_ok:
         return SessionStatus.PENDING_CONFIRMATION
     return SessionStatus.PLANNED
+
+
+def consume_lesson_credit(student_id: int) -> bool:
+    sp = StudentPackage.query.filter_by(student_id=student_id, status=PackageStatus.ACTIVE).order_by(StudentPackage.id.desc()).first()
+    if not sp:
+        return False
+    if sp.end_date and sp.end_date < datetime.utcnow():
+        sp.status = PackageStatus.EXPIRED
+        db.session.commit()
+        return False
+    if sp.remaining_lessons <= 0:
+        sp.status = PackageStatus.USED_UP
+        db.session.commit()
+        return False
+    sp.remaining_lessons -= 1
+    if sp.remaining_lessons <= 0:
+        sp.status = PackageStatus.USED_UP
+    db.session.commit()
+    return True
+
+
+def consume_lesson_credit_or_409(student_id: int):
+    if consume_lesson_credit(student_id):
+        return None
+    return jsonify({"message": "no_active_package_or_no_remaining_lessons"}), 409
 
 
 ALLOWED_TRANSITIONS = {
@@ -372,12 +396,38 @@ def update_lesson_session(session_id: int):
         s.mode = parsed
 
     try:
+        if s.status == SessionStatus.COMPLETED and not s.consumed:
+            if consume_lesson_credit(s.student_id):
+                s.consumed = True
         db.session.commit()
     except Exception as ex:
         db.session.rollback()
         return jsonify({"message": "DB error", "error": str(ex)}), 400
 
     return jsonify(s.to_dict()), 200
+
+
+@bp.delete("/<int:session_id>")
+@require_auth
+def delete_lesson_session(session_id: int):
+    """
+    ADMIN: hard delete
+    """
+    if g.role != "ADMIN":
+        return jsonify({"message": "forbidden"}), 403
+
+    s = LessonSession.query.get(session_id)
+    if not s:
+        return jsonify({"message": "LessonSession not found"}), 404
+
+    try:
+        db.session.delete(s)
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"message": "DB error", "error": str(ex)}), 400
+
+    return jsonify({"message": "lesson_session_deleted", "id": session_id}), 200
 
 
 @bp.patch("/<int:session_id>/teacher-mark")
@@ -400,6 +450,9 @@ def teacher_mark(session_id: int):
     rating = data.get("teacher_rating_to_student")
     note = data.get("teacher_mark_note")
 
+    if not note or not str(note).strip():
+        return jsonify({"message": "teacher_mark_note zorunlu"}), 400
+
     if rating is not None:
         parsed = parse_int(rating, "teacher_rating_to_student", required=False)
         if isinstance(parsed, tuple):
@@ -416,6 +469,9 @@ def teacher_mark(session_id: int):
     s.status = recalc_status(s)
 
     try:
+        if s.status == SessionStatus.COMPLETED and not s.consumed:
+            if consume_lesson_credit(s.student_id):
+                s.consumed = True
         db.session.commit()
     except Exception as ex:
         db.session.rollback()
@@ -449,9 +505,36 @@ def student_mark(session_id: int):
         return jsonify({"message": "cannot mark a cancelled/missed session"}), 409
 
     data = request.get_json(silent=True) or {}
+    done = data.get("done", True)
 
     rating = data.get("student_rating_to_teacher") or data.get("rating")
     note = data.get("student_note") or data.get("note")
+
+    if not s.teacher_marked_at:
+        return jsonify({"message": "teacher_mark_required"}), 409
+
+    # Öğrenci "yapılmadı" derse ders MISSED olur, hak düşmez
+    if done is False or str(done).lower() == "false":
+        s.student_marked_at = datetime.utcnow()
+        s.status = SessionStatus.MISSED
+        try:
+            db.session.commit()
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({"message": "DB error", "error": str(ex)}), 400
+        return jsonify(s.to_dict()), 200
+
+    # öğrenci sadece kalan ders 1 ise puanlayabilir (puan/veri varsa kontrol)
+    if rating is not None or note is not None:
+        sp = StudentPackage.query.filter_by(student_id=s.student_id, status=PackageStatus.ACTIVE).order_by(StudentPackage.id.desc()).first()
+        if not sp:
+            return jsonify({"message": "active_package_required_for_rating"}), 409
+        if sp.end_date and sp.end_date < datetime.utcnow():
+            sp.status = PackageStatus.EXPIRED
+            db.session.commit()
+            return jsonify({"message": "package_expired"}), 409
+        if sp.remaining_lessons > 1:
+            return jsonify({"message": "rating_allowed_only_when_remaining_lessons_is_1", "remaining_lessons": sp.remaining_lessons}), 409
 
     if rating is not None:
         parsed = parse_int(rating, "student_rating_to_teacher", required=False)
@@ -469,9 +552,84 @@ def student_mark(session_id: int):
     s.status = recalc_status(s)
 
     try:
+        if s.status == SessionStatus.COMPLETED and not s.consumed:
+            if consume_lesson_credit(s.student_id):
+                s.consumed = True
         db.session.commit()
     except Exception as ex:
         db.session.rollback()
         return jsonify({"message": "DB error", "error": str(ex)}), 400
 
     return jsonify(s.to_dict()), 200
+
+
+@bp.patch("/<int:session_id>/cancel")
+@require_auth
+def cancel_lesson_session(session_id: int):
+    """
+    TEACHER ve STUDENT dersi iptal edebilir.
+    Öğrenci planlanan saatten 2 saat önce iptal ederse ders hakkı düşer.
+    Öğretmen iptal ederse ders hakkı düşmez.
+    """
+    s, err = load_session_or_404(session_id)
+    if err:
+        return err
+
+    if s.status in {SessionStatus.CANCELLED, SessionStatus.COMPLETED, SessionStatus.MISSED}:
+        return jsonify({"message": "cannot_cancel_in_current_status", "status": s.status.value}), 409
+
+    if g.role == "TEACHER":
+        if s.teacher_user_id != g.user_id:
+            return jsonify({"message": "forbidden"}), 403
+        s.status = SessionStatus.CANCELLED
+        s.cancelled_by_role = "TEACHER"
+        s.cancelled_by_user_id = g.user_id
+        s.cancelled_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({"message": "DB error", "error": str(ex)}), 400
+        return jsonify(s.to_dict()), 200
+
+    if g.role == "STUDENT":
+        me = get_my_student_profile()
+        if not me:
+            return jsonify({"message": "student_profile_not_found"}), 404
+        if s.student_id != me.id:
+            return jsonify({"message": "forbidden"}), 403
+
+        now = datetime.utcnow()
+        two_hours = timedelta(hours=2)
+        if s.scheduled_start - now <= two_hours:
+            # ders hakkı düşer
+            if not s.consumed:
+                err = consume_lesson_credit_or_409(s.student_id)
+                if err:
+                    return err
+                s.consumed = True
+
+        s.status = SessionStatus.CANCELLED
+        s.cancelled_by_role = "STUDENT"
+        s.cancelled_by_user_id = g.user_id
+        s.cancelled_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({"message": "DB error", "error": str(ex)}), 400
+        return jsonify(s.to_dict()), 200
+
+    if g.role == "ADMIN":
+        s.status = SessionStatus.CANCELLED
+        s.cancelled_by_role = "ADMIN"
+        s.cancelled_by_user_id = g.user_id
+        s.cancelled_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({"message": "DB error", "error": str(ex)}), 400
+        return jsonify(s.to_dict()), 200
+
+    return jsonify({"message": "forbidden"}), 403

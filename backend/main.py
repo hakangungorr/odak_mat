@@ -11,6 +11,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/")
 app.config.from_object(Config)
+app.url_map.strict_slashes = False
 
 CORS(app)
 

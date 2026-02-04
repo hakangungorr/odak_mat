@@ -26,7 +26,7 @@ export async function login(email, password) {
         body: { email, password },
     });
 
-    const token = data.token || data.acces_token;
+    const token = data.access_token || data.token || data.acces_token;
     const user = data.user || data;
 
     if (!token) throw new Error("Login response token içermiyor");

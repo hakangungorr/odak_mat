@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch(path, { method = "GET", token, body, headers } = {}) {
-    const url = buildUrl(patch);
+    const url = buildUrl(path);
 
     const res = await fetch(url, {
         method,

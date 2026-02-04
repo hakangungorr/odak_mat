@@ -5,6 +5,9 @@ from sqlalchemy.exc import IntegrityError
 from app.database import db
 from app.models.user import User
 from app.models.student import Student
+from app.models.enrollment import Enrollment
+from app.models.lesson_session import LessonSession
+from datetime import datetime
 from app.models.role import Role
 from app.auth.require_auth import require_auth
 
@@ -85,3 +88,30 @@ def create_student_account():
             "grade": s.grade,
         }
     }), 201
+
+
+@bp.delete("/student-accounts/<int:student_id>")
+@require_auth
+def delete_student_account(student_id: int):
+    if not require_admin():
+        return jsonify({"error": "forbidden"}), 403
+
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"message": "Student not found"}), 404
+
+    # Enrollments: hard delete to avoid FK constraint issues
+    try:
+        # Soft delete student, keep records for history/marketing
+        student.deleted_at = datetime.utcnow()
+        user = User.query.get(student.user_id)
+        # Deactivate user so they cannot login again
+        if user:
+            user.is_active = False
+            user.deleted_at = datetime.utcnow()
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"message": "DB error", "error": str(ex)}), 400
+
+    return jsonify({"message": "student_account_deleted", "student_id": student_id}), 200

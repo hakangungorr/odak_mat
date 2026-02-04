@@ -7,7 +7,7 @@ export default function RequireAuth({ allowedRoles }) {
     const { token, user } = loadAuth();
 
     if (!token) {
-        return <Navigate to="/login" replace_state={{ from: location }} />
+        return <Navigate to="/login" state={{ from: location }} replace />
     }
     if (allowedRoles?.length) {
         const role = user?.role;

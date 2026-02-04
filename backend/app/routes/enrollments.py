@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from app.database import db
 from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.models.student import Student
+from app.models.user import User
 from app.auth.require_auth import require_auth
 
 bp = Blueprint("enrollments", __name__)
@@ -14,6 +15,26 @@ ALLOWED_STATUS = {s.value for s in EnrollmentStatus}  # {"ACTIVE","PASSIVE"}
 def get_my_student_profile():
     # Student.user_id = users.id (öğrenci login)
     return Student.query.filter_by(user_id=g.user_id).first()
+
+
+def teacher_summary(user_id: int):
+    if not user_id:
+        return None
+    u = User.query.get(user_id)
+    if not u:
+        return None
+    return {
+        "id": u.id,
+        "full_name": u.full_name,
+        "email": u.email,
+    }
+
+
+def enrollment_to_dict(e: Enrollment, include_teacher: bool = False):
+    data = e.to_dict()
+    if include_teacher:
+        data["teacher"] = teacher_summary(e.teacher_user_id)
+    return data
 
 
 @bp.get("/")
@@ -81,7 +102,8 @@ def list_enrollments():
         q = q.filter(Enrollment.status == EnrollmentStatus.ACTIVE)
 
     enrollments = q.order_by(Enrollment.id.desc()).all()
-    return jsonify([e.to_dict() for e in enrollments]), 200
+    include_teacher = g.role == "STUDENT"
+    return jsonify([enrollment_to_dict(e, include_teacher=include_teacher) for e in enrollments]), 200
 
 
 @bp.get("/<int:enrollment_id>")
@@ -105,7 +127,8 @@ def get_enrollment(enrollment_id: int):
     else:
         return jsonify({"message": "forbidden"}), 403
 
-    return jsonify(e.to_dict()), 200
+    include_teacher = g.role == "STUDENT"
+    return jsonify(enrollment_to_dict(e, include_teacher=include_teacher)), 200
 
 
 @bp.post("/")

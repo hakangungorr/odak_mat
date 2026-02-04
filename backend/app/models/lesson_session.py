@@ -30,6 +30,11 @@ class LessonSession(BaseModel):
     topic = db.Column(db.String(300), nullable=True)
 
     status = db.Column(db.Enum(SessionStatus, name="sessionstatus"), nullable=False, default=SessionStatus.PLANNED)
+    consumed = db.Column(db.Boolean, nullable=False, default=False)
+
+    cancelled_by_role = db.Column(db.String(20), nullable=True)
+    cancelled_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True)
 
 
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)

@@ -2,13 +2,20 @@ from flask import Blueprint, request, jsonify, g
 from app.database import db
 from app.models.student import Student
 from app.models.enrollment import Enrollment
+from app.models.user import User
 from app.auth.require_auth import require_auth
 
 bp = Blueprint("students", __name__)
 
 
 def get_my_student_profile():
-    return Student.query.filter_by(user_id=g.user_id).first()
+    return Student.query.filter_by(user_id=g.user_id, deleted_at=None).first()
+
+def student_to_dict_with_user(student: Student):
+    data = student.to_dict()
+    user = User.query.get(student.user_id)
+    data["email"] = user.email if user else None
+    return data
 
 
 @bp.get("/")
@@ -19,9 +26,13 @@ def list_students():
     TEACHER: sadece kendisine atanmış öğrenciler
     STUDENT: sadece kendi profili (liste yerine 1 kayıt döner)
     """
+    include_deleted = request.args.get("include_deleted") == "1"
     if g.role == "ADMIN":
-        students = Student.query.order_by(Student.id.desc()).all()
-        return jsonify([s.to_dict() for s in students]), 200
+        q = Student.query
+        if not include_deleted:
+            q = q.filter(Student.deleted_at.is_(None))
+        students = q.order_by(Student.id.desc()).all()
+        return jsonify([student_to_dict_with_user(s) for s in students]), 200
 
     if g.role == "TEACHER":
         # teacher'ın öğrencileri: enrollment üzerinden
@@ -31,14 +42,14 @@ def list_students():
         ]
         if not student_ids:
             return jsonify([]), 200
-        students = Student.query.filter(Student.id.in_(student_ids)).order_by(Student.id.desc()).all()
-        return jsonify([s.to_dict() for s in students]), 200
+        students = Student.query.filter(Student.id.in_(student_ids)).filter(Student.deleted_at.is_(None)).order_by(Student.id.desc()).all()
+        return jsonify([student_to_dict_with_user(s) for s in students]), 200
 
     if g.role == "STUDENT":
         me = get_my_student_profile()
         if not me:
             return jsonify({"message": "student_profile_not_found"}), 404
-        return jsonify([me.to_dict()]), 200  # liste endpoint'i ama tek kayıt
+        return jsonify([student_to_dict_with_user(me)]), 200  # liste endpoint'i ama tek kayıt
 
     return jsonify({"message": "forbidden"}), 403
 
@@ -98,7 +109,7 @@ def get_my_student():
     me = get_my_student_profile()
     if not me:
         return jsonify({"message": "student_profile_not_found"}), 404
-    return jsonify(me.to_dict()), 200
+    return jsonify(student_to_dict_with_user(me)), 200
 
 
 @bp.get("/<int:student_id>")
@@ -109,13 +120,13 @@ def get_student(student_id: int):
         return jsonify({"message": "Student not found"}), 404
 
     if g.role == "ADMIN":
-        return jsonify(student.to_dict()), 200
+        return jsonify(student_to_dict_with_user(student)), 200
 
     if g.role == "TEACHER":
         ok = Enrollment.query.filter_by(student_id=student_id, teacher_user_id=g.user_id).first()
         if not ok:
             return jsonify({"message": "forbidden"}), 403
-        return jsonify(student.to_dict()), 200
+        return jsonify(student_to_dict_with_user(student)), 200
 
     if g.role == "STUDENT":
         me = get_my_student_profile()
@@ -123,7 +134,7 @@ def get_student(student_id: int):
             return jsonify({"message": "student_profile_not_found"}), 404
         if me.id != student_id:
             return jsonify({"message": "forbidden"}), 403
-        return jsonify(student.to_dict()), 200
+        return jsonify(student_to_dict_with_user(student)), 200
 
     return jsonify({"message": "forbidden"}), 403
 
@@ -146,8 +157,12 @@ def update_student(student_id: int):
         if me.id != student_id:
             return jsonify({"message": "forbidden"}), 403
     else:
-        # TEACHER öğrenci profilini değiştiremesin (senin kurala uygun)
-        return jsonify({"message": "forbidden"}), 403
+        # TEACHER sadece eğitim alanlarını güncelleyebilir
+        if g.role != "TEACHER":
+            return jsonify({"message": "forbidden"}), 403
+        ok = Enrollment.query.filter_by(student_id=student_id, teacher_user_id=g.user_id).first()
+        if not ok:
+            return jsonify({"message": "forbidden"}), 403
 
     data = request.get_json(silent=True) or {}
 
@@ -159,6 +174,18 @@ def update_student(student_id: int):
 
     if "grade" in data:
         student.grade = data.get("grade")
+
+    if "level" in data:
+        student.level = data.get("level")
+
+    if "target_exam" in data:
+        student.target_exam = data.get("target_exam")
+
+    if "strengths" in data:
+        student.strengths = data.get("strengths")
+
+    if "weaknesses" in data:
+        student.weaknesses = data.get("weaknesses")
 
     # admin isterse student.user_id'yi de değiştirebilir (opsiyonel)
     if g.role == "ADMIN" and "user_id" in data:
@@ -178,4 +205,4 @@ def update_student(student_id: int):
         db.session.rollback()
         return jsonify({"message": "DB error", "error": str(e)}), 400
 
-    return jsonify(student.to_dict()), 200
+    return jsonify(student_to_dict_with_user(student)), 200

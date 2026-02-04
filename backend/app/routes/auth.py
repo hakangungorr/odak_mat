@@ -1,8 +1,7 @@
 from flask import request, jsonify
 from werkzeug.security import check_password_hash
 from app.models.user import User
-import jwt, os
-from datetime import datetime, timedelta
+from app.auth.jwt import make_token
 from flask import Blueprint, request, jsonify
 
 bp = Blueprint("auth", __name__)
@@ -28,12 +27,8 @@ def login():
     if not user.is_active:
         return jsonify({"error": "user is inactive"}), 403
 
-    payload = {
-        "sub": user.id,
-        "role": user.role.key if getattr(user, "role", None) else None,
-        "exp": datetime.utcnow() + timedelta(days=7),
-    }
-    token = jwt.encode(payload, os.getenv("JWT_SECRET", "dev-secret"), algorithm="HS256")
+    role_key = user.role.key if getattr(user, "role", None) else None
+    token = make_token(user.id, role_key)
 
     return jsonify({
         "access_token": token,
@@ -41,6 +36,7 @@ def login():
             "id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "role": payload["role"],
+            "role": role_key,
+            "teacher_rate": float(user.teacher_rate) if getattr(user, "teacher_rate", None) is not None else None,
         }
     }), 200

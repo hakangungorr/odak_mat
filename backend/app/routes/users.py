@@ -1,12 +1,15 @@
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime
 
 from app.database import db
 from app.models.user import User
 from app.models.role import Role
+from app.models.enrollment import Enrollment, EnrollmentStatus
+from app.models.lesson_session import LessonSession
 from app.auth.require_auth import require_auth
 
-bp = Blueprint("users", __name__ ,  url_prefix="/api/users")
+bp = Blueprint("users", __name__)
 
 
 def norm_key(raw):
@@ -25,6 +28,7 @@ def user_to_dict(u: User):
         "role_id": u.role_id,
         "role_key": u.role.key if u.role else None,
         "is_active": u.is_active,
+        "teacher_rate": float(u.teacher_rate) if getattr(u, "teacher_rate", None) is not None else None,
         "created_at": u.created_at.isoformat() if getattr(u, "created_at", None) else None,
         "updated_at": u.updated_at.isoformat() if getattr(u, "updated_at", None) else None,
     }
@@ -43,6 +47,9 @@ def list_users():
     role_key = norm_key(request.args.get("role"))
 
     q = User.query
+    include_deleted = request.args.get("include_deleted") == "1"
+    if not include_deleted:
+        q = q.filter(User.is_active.is_(True), User.deleted_at.is_(None))
 
     if role_key:
         role = Role.query.filter_by(key=role_key).first()
@@ -85,6 +92,7 @@ def create_user():
     password = data.get("password") or ""
     role_key = norm_key(data.get("role_key")) or "TEACHER"
     is_active = bool(data.get("is_active", True))
+    teacher_rate = data.get("teacher_rate")
 
     if not full_name:
         return jsonify({"message": "full_name boş olamaz"}), 400
@@ -110,6 +118,11 @@ def create_user():
         role_id=role.id,
         is_active=is_active,
     )
+    if teacher_rate is not None:
+        try:
+            u.teacher_rate = float(teacher_rate)
+        except Exception:
+            return jsonify({"message": "teacher_rate must be number"}), 400
     u.set_password(password)
 
     try:
@@ -123,3 +136,63 @@ def create_user():
         return jsonify({"message": "DB error", "error": str(ex)}), 400
 
     return jsonify(user_to_dict(u)), 201
+
+
+@bp.patch("/<int:user_id>")
+@require_auth
+def update_user(user_id: int):
+    if g.role != "ADMIN":
+        return jsonify({"message": "forbidden"}), 403
+
+    u = User.query.get(user_id)
+    if not u:
+        return jsonify({"message": "User not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    if "teacher_rate" in data:
+        try:
+            u.teacher_rate = float(data.get("teacher_rate"))
+        except Exception:
+            return jsonify({"message": "teacher_rate must be number"}), 400
+
+    try:
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"message": "DB error", "error": str(ex)}), 400
+
+    return jsonify(user_to_dict(u)), 200
+
+
+@bp.delete("/<int:user_id>")
+@require_auth
+def delete_user(user_id: int):
+    """
+    ADMIN teacher (veya user) siler.
+    """
+    if g.role != "ADMIN":
+        return jsonify({"message": "forbidden"}), 403
+
+    u = User.query.get(user_id)
+    if not u:
+        return jsonify({"message": "User not found"}), 404
+
+    # Admin hesabını silmeye izin verme
+    if u.role and u.role.key == "ADMIN":
+        return jsonify({"message": "cannot_delete_admin"}), 400
+
+    try:
+        # Öğretmene bağlı enrollments pasif (silmeden)
+        Enrollment.query.filter_by(teacher_user_id=u.id).update(
+            {"status": EnrollmentStatus.PASSIVE},
+            synchronize_session=False,
+        )
+        u.is_active = False
+        u.deleted_at = datetime.utcnow()
+        db.session.commit()
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"message": "DB error", "error": str(ex)}), 400
+
+    return jsonify({"message": "user_deleted", "user_id": user_id}), 200
