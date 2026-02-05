@@ -29,6 +29,7 @@ def user_to_dict(u: User):
         "role_key": u.role.key if u.role else None,
         "is_active": u.is_active,
         "teacher_rate": float(u.teacher_rate) if getattr(u, "teacher_rate", None) is not None else None,
+        "phones": u.phones,
         "created_at": u.created_at.isoformat() if getattr(u, "created_at", None) else None,
         "updated_at": u.updated_at.isoformat() if getattr(u, "updated_at", None) else None,
     }
@@ -93,6 +94,7 @@ def create_user():
     role_key = norm_key(data.get("role_key")) or "TEACHER"
     is_active = bool(data.get("is_active", True))
     teacher_rate = data.get("teacher_rate")
+    phones = data.get("phones")
 
     if not full_name:
         return jsonify({"message": "full_name boş olamaz"}), 400
@@ -123,6 +125,8 @@ def create_user():
             u.teacher_rate = float(teacher_rate)
         except Exception:
             return jsonify({"message": "teacher_rate must be number"}), 400
+    if phones is not None:
+        u.phones = str(phones)
     u.set_password(password)
 
     try:
@@ -155,6 +159,8 @@ def update_user(user_id: int):
             u.teacher_rate = float(data.get("teacher_rate"))
         except Exception:
             return jsonify({"message": "teacher_rate must be number"}), 400
+    if "phones" in data:
+        u.phones = str(data.get("phones"))
 
     try:
         db.session.commit()

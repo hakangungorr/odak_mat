@@ -69,9 +69,12 @@ def list_student_packages():
 
     if g.role == "ADMIN":
         student_id = request.args.get("student_id", type=int)
+        include_deleted = request.args.get("include_deleted") == "1"
         q = StudentPackage.query
         if student_id:
             q = q.filter(StudentPackage.student_id == student_id)
+        if not include_deleted:
+            q = q.join(Student, StudentPackage.student_id == Student.id).filter(Student.deleted_at.is_(None))
         items = q.order_by(StudentPackage.id.desc()).all()
         return jsonify([sp.to_dict() for sp in items]), 200
 

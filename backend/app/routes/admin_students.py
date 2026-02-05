@@ -80,6 +80,7 @@ def create_student_account():
             "email": u.email,
             "role_id": u.role_id,
             "is_active": u.is_active,
+            "phones": u.phones,
         },
         "student": {
             "id": s.id,
@@ -102,8 +103,11 @@ def delete_student_account(student_id: int):
 
     # Enrollments: hard delete to avoid FK constraint issues
     try:
-        # Soft delete student, keep records for history/marketing
+        # Soft delete student, keep core records for history/marketing
         student.deleted_at = datetime.utcnow()
+        # Remove package records so they don't appear in active lists
+        from app.models.package import StudentPackage
+        StudentPackage.query.filter_by(student_id=student.id).delete(synchronize_session=False)
         user = User.query.get(student.user_id)
         # Deactivate user so they cannot login again
         if user:

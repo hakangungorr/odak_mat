@@ -13,12 +13,14 @@ export default function TeacherPage() {
     const [reports, setReports] = useState([]);
     const [homeworks, setHomeworks] = useState([]);
     const [studentPackages, setStudentPackages] = useState([]);
+    const [externalEvents, setExternalEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
     const [sessionErr, setSessionErr] = useState("");
 
     const [sessionStudentId, setSessionStudentId] = useState("");
-    const [sessionStart, setSessionStart] = useState("");
+    const [sessionDate, setSessionDate] = useState("");
+    const [sessionTime, setSessionTime] = useState("09:00");
     const [sessionDuration, setSessionDuration] = useState("60");
     const [sessionMode, setSessionMode] = useState("ONLINE");
     const [sessionTopic, setSessionTopic] = useState("");
@@ -39,7 +41,7 @@ export default function TeacherPage() {
     const [hwDesc, setHwDesc] = useState("");
     const [hwDue, setHwDue] = useState("");
 
-    const [markInputs, setMarkInputs] = useState({});
+    // no per-session inputs needed for marking
 
     async function loadStudents() {
         setLoading(true);
@@ -68,7 +70,17 @@ export default function TeacherPage() {
                 method: "GET",
                 token,
             });
-            setSessions(Array.isArray(data) ? data : (data?.items ?? []));
+            const items = Array.isArray(data) ? data : (data?.items ?? []);
+            const now = new Date();
+            setSessions(
+                items.filter((s) => {
+                    if (s.status === "COMPLETED") return false;
+                    if (!s.scheduled_start) return true;
+                    const d = new Date(s.scheduled_start);
+                    if (Number.isNaN(d.getTime())) return true;
+                    return d >= now;
+                })
+            );
         } catch (ex) {
             setSessionErr(ex?.message || "Dersler yüklenemedi");
         }
@@ -109,6 +121,9 @@ export default function TeacherPage() {
         loadSessions();
         loadReports();
         loadHomeworks();
+        apiFetch("/api/calendar/public-calendar", { method: "GET", token })
+            .then((cal) => setExternalEvents(Array.isArray(cal?.items) ? cal.items : []))
+            .catch(() => setExternalEvents([]));
     }, []);
 
     function onLogout() {
@@ -121,9 +136,12 @@ export default function TeacherPage() {
         setSessionErr("");
 
         try {
+            const scheduledStart = sessionDate && sessionTime
+                ? `${sessionDate}T${sessionTime}:00`
+                : "";
             const payload = {
                 student_id: Number(sessionStudentId),
-                scheduled_start: sessionStart,
+                scheduled_start: scheduledStart,
                 duration_min: Number(sessionDuration),
                 mode: sessionMode,
                 topic: sessionTopic || undefined,
@@ -133,7 +151,8 @@ export default function TeacherPage() {
                 token,
                 body: payload,
             });
-            setSessionStart("");
+            setSessionDate("");
+            setSessionTime("09:00");
             setSessionDuration("60");
             setSessionMode("ONLINE");
             setSessionTopic("");
@@ -146,14 +165,10 @@ export default function TeacherPage() {
     async function onTeacherMark(sessionId) {
         setSessionErr("");
         try {
-            const payload = markInputs[sessionId] || {};
             await apiFetch(`/api/lesson-sessions/${sessionId}/teacher-mark`, {
                 method: "PATCH",
                 token,
-                body: {
-                    teacher_rating_to_student: payload.rating ? Number(payload.rating) : undefined,
-                    teacher_mark_note: payload.note || undefined,
-                },
+                body: {},
             });
             await loadSessions();
         } catch (ex) {
@@ -253,12 +268,16 @@ export default function TeacherPage() {
             setProfileStrengths(s.strengths || "");
             setProfileWeaknesses(s.weaknesses || "");
         }
-        loadStudentPackages(selectedStudentId);
     }, [selectedStudentId, students]);
+
+    useEffect(() => {
+        loadStudentPackages(sessionStudentId ? Number(sessionStudentId) : null);
+    }, [sessionStudentId]);
 
     const selectedStudent = students.find((s) => s.id === selectedStudentId) || null;
     const studentNameById = new Map(students.map((s) => [s.id, s.full_name]));
     const activeStudentPackage = studentPackages.find((sp) => sp.status === "ACTIVE") || studentPackages[0];
+    const remainingForSession = activeStudentPackage?.remaining_lessons;
 
     const pendingTeacher = sessions.filter((s) => !s.teacher_marked_at && !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status));
     const pendingStudent = sessions.filter((s) => s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION");
@@ -271,6 +290,82 @@ export default function TeacherPage() {
     }).length;
     const rate = Number(user?.teacher_rate || 0);
     const monthEarning = rate * monthCompleted;
+
+    function formatDatePart(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "-";
+        return d.toLocaleDateString();
+    }
+
+    function formatTimePart(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "-";
+        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function groupSessionsByDate(items) {
+        const map = new Map();
+        for (const s of items) {
+            const key = formatDatePart(s.scheduled_start);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(s);
+        }
+        return Array.from(map.entries());
+    }
+
+    const [monthOffset, setMonthOffset] = useState(0);
+
+    function buildMonthDays(offset = 0) {
+        const now = new Date();
+        const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+        const days = [];
+        const startDay = first.getDay();
+        for (let i = 0; i < startDay; i += 1) days.push(null);
+        for (let d = 1; d <= last.getDate(); d += 1) {
+            days.push(new Date(first.getFullYear(), first.getMonth(), d));
+        }
+        return { first, days };
+    }
+
+    function toKey(d) {
+        return d.toISOString().slice(0, 10);
+    }
+
+    function mergeCalendarItems() {
+        const items = [];
+        sessions.forEach((s) => {
+            if (!s.scheduled_start) return;
+            items.push({
+                date: s.scheduled_start.slice(0, 10),
+                time: formatTimePart(s.scheduled_start),
+                title: s.topic ? `Ders: ${s.topic}` : "Ders",
+                type: "lesson",
+            });
+        });
+        externalEvents.forEach((e) => {
+            if (!e.start) return;
+            items.push({
+                date: e.start.slice(0, 10),
+                time: formatTimePart(e.start),
+                title: e.summary || "Etkinlik",
+                type: "external",
+            });
+        });
+        return items;
+    }
+
+    function groupEventsByDate(items) {
+        const map = new Map();
+        for (const e of items) {
+            const key = formatDatePart(e.start);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(e);
+        }
+        return Array.from(map.entries());
+    }
 
     return (
         <div style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
@@ -381,16 +476,15 @@ export default function TeacherPage() {
                     {sessions.length === 0 ? (
                         <div>Henüz ders oluşturulmadı.</div>
                     ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <table className="table-desktop" style={{ width: "100%", borderCollapse: "collapse" }}>
                             <thead>
                                 <tr style={{ textAlign: "left" }}>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Saat</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrenci</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Mod</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Not</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>İptal Eden</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
                                 </tr>
@@ -409,7 +503,10 @@ export default function TeacherPage() {
                                     return (
                                         <tr key={s.id}>
                                             <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {s.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
+                                                {formatDatePart(s.scheduled_start)}
+                                            </td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                {formatTimePart(s.scheduled_start)}
                                             </td>
                                             <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                                 {studentNameById.get(s.student_id) || `#${s.student_id}`}
@@ -432,33 +529,6 @@ export default function TeacherPage() {
                                                 }}>
                                                     {s.status}
                                                 </span>
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    max="5"
-                                                    value={markInputs[s.id]?.rating || ""}
-                                                    onChange={(e) =>
-                                                        setMarkInputs((prev) => ({
-                                                            ...prev,
-                                                            [s.id]: { ...(prev[s.id] || {}), rating: e.target.value },
-                                                        }))
-                                                    }
-                                                    style={{ width: 60 }}
-                                                />
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                <input
-                                                    value={markInputs[s.id]?.note || ""}
-                                                    onChange={(e) =>
-                                                        setMarkInputs((prev) => ({
-                                                            ...prev,
-                                                            [s.id]: { ...(prev[s.id] || {}), note: e.target.value },
-                                                        }))
-                                                    }
-                                                    placeholder="Not"
-                                                />
                                             </td>
                                             <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                                 {s.cancelled_by_role || "-"}
@@ -484,6 +554,32 @@ export default function TeacherPage() {
                             </tbody>
                         </table>
                     )}
+                    <div className="stack-cards">
+                        {sessions.map((s) => (
+                            <div key={s.id} className="stack-card">
+                                <div><strong>Tarih:</strong> {formatDatePart(s.scheduled_start)}</div>
+                                <div><strong>Saat:</strong> {formatTimePart(s.scheduled_start)}</div>
+                                <div><strong>Öğrenci:</strong> {studentNameById.get(s.student_id) || `#${s.student_id}`}</div>
+                                <div><strong>Süre:</strong> {s.duration_min} dk</div>
+                                <div><strong>Durum:</strong> {s.status}</div>
+                                <div style={{ marginTop: 8 }}>
+                                    <button
+                                        disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status)) || !!s.teacher_marked_at}
+                                        onClick={() => onTeacherMark(s.id)}
+                                    >
+                                        {s.teacher_marked_at ? "İşaretlendi" : "Dersi Yaptım"}
+                                    </button>
+                                    <button
+                                        style={{ marginTop: 6 }}
+                                        disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status))}
+                                        onClick={() => onTeacherCancel(s.id)}
+                                    >
+                                        İptal Et
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
@@ -501,10 +597,28 @@ export default function TeacherPage() {
                             ))}
                         </select>
                         <input
-                            type="datetime-local"
-                            value={sessionStart}
-                            onChange={(e) => setSessionStart(e.target.value)}
+                            type="date"
+                            value={sessionDate}
+                            min={new Date().toISOString().slice(0, 10)}
+                            onChange={(e) => setSessionDate(e.target.value)}
                         />
+                        <select
+                            value={sessionTime}
+                            onChange={(e) => setSessionTime(e.target.value)}
+                        >
+                            {Array.from({ length: 48 }, (_, i) => {
+                                const minutes = 9 * 60 + i * 15;
+                                if (minutes > 21 * 60) return null;
+                                const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+                                const mm = String(minutes % 60).padStart(2, "0");
+                                const label = `${hh}:${mm}`;
+                                return (
+                                    <option key={label} value={label}>
+                                        {label}
+                                    </option>
+                                );
+                            })}
+                        </select>
                         <input
                             type="number"
                             min="15"
@@ -525,12 +639,17 @@ export default function TeacherPage() {
                             value={sessionTopic}
                             onChange={(e) => setSessionTopic(e.target.value)}
                         />
-                        <button disabled={!sessionStudentId || !sessionStart}>
+                        {remainingForSession !== undefined && remainingForSession <= 0 ? (
+                            <div style={{ fontSize: 12, color: "#b91c1c" }}>
+                                Bu öğrencinin ders hakkı bitmiş. Yeni ders oluşturulamaz.
+                            </div>
+                        ) : null}
+                        <button disabled={!sessionStudentId || !sessionDate || !sessionTime || remainingForSession === 0}>
                             Oluştur
                         </button>
                     </form>
                     <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
-                        Tarih formatı: tarayıcının `datetime-local` değeri otomatik ISO format olur.
+                        Tarih ve saat ayrı seçilir. Saatler 15 dakikalık aralıktadır.
                     </div>
                 </div>
 
@@ -542,34 +661,86 @@ export default function TeacherPage() {
                 </div>
             </div>
 
+            <div className="calendar-wrap" style={{ marginTop: 24 }}>
+                <div className="calendar-header">
+                    <h3 style={{ margin: 0 }}>Takvim (Ders + Google)</h3>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => setMonthOffset((m) => m - 1)}>‹</button>
+                        <button onClick={() => setMonthOffset(0)}>Bugün</button>
+                        <button onClick={() => setMonthOffset((m) => m + 1)}>›</button>
+                    </div>
+                </div>
+                {(() => {
+                    const { first, days } = buildMonthDays(monthOffset);
+                    const items = mergeCalendarItems();
+                    const byDate = new Map();
+                    items.forEach((it) => {
+                        if (!byDate.has(it.date)) byDate.set(it.date, []);
+                        byDate.get(it.date).push(it);
+                    });
+                    return (
+                        <>
+                            <div style={{ marginBottom: 8, color: "#5e5e67" }}>
+                                {first.toLocaleString([], { month: "long", year: "numeric" })}
+                            </div>
+                            <div className="calendar-grid">
+                                {days.map((d, idx) => {
+                                    if (!d) return <div key={`e-${idx}`} className="calendar-cell" />;
+                                    const key = toKey(d);
+                                    const dayItems = byDate.get(key) || [];
+                                    return (
+                                        <div key={key} className="calendar-cell">
+                                            <div className="calendar-day">{d.getDate()}</div>
+                                            {dayItems.map((it, i) => (
+                                                <span key={`${key}-${i}`} className={`calendar-item ${it.type}`}>
+                                                    {it.time} · {it.title}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    );
+                })()}
+            </div>
+
             <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: 16 }}>
-                <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Ders Raporları ({reports.length})</h3>
-                    {reports.length === 0 ? (
-                        <div>Henüz rapor yok.</div>
-                    ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                            <thead>
-                                <tr style={{ textAlign: "left" }}>
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                        <h3 style={{ marginTop: 0 }}>Ders Raporları ({reports.length})</h3>
+                        {reports.length === 0 ? (
+                            <div>Henüz rapor yok.</div>
+                        ) : (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                    <tr style={{ textAlign: "left" }}>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrenci</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {reports.map((r) => (
-                                    <tr key={r.id}>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {studentNameById.get(r.student_id) || `#${r.student_id}`}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sonraki Ders Notu</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
+                                </thead>
+                                <tbody>
+                                    {reports.map((r) => (
+                                        <tr key={r.id}>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                {formatDatePart(r.created_at)}
+                                            </td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                {studentNameById.get(r.student_id) || `#${r.student_id}`}
+                                            </td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.teacher_note || "-"}</td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.next_note || "-"}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
                     <h3 style={{ marginTop: 0 }}>Ders Sonu Raporu</h3>
                     <form onSubmit={onCreateReport} style={{ display: "grid", gap: 10 }}>

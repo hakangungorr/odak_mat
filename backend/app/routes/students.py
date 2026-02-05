@@ -15,6 +15,7 @@ def student_to_dict_with_user(student: Student):
     data = student.to_dict()
     user = User.query.get(student.user_id)
     data["email"] = user.email if user else None
+    data["phones"] = user.phones if user else None
     return data
 
 

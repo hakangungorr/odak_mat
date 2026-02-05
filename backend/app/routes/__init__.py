@@ -7,6 +7,7 @@ from app.routes.users import bp as users_bp
 from app.routes.homeworks import bp as homeworks_bp
 from app.routes.lesson_reports import bp as lesson_reports_bp
 from app.routes.packages import bp as packages_bp
+from app.routes.calendar import bp as calendar_bp
 
 
 def register_routes(app):
@@ -19,3 +20,4 @@ def register_routes(app):
     app.register_blueprint(homeworks_bp, url_prefix="/api/homeworks")
     app.register_blueprint(lesson_reports_bp, url_prefix="/api/lesson-reports")
     app.register_blueprint(packages_bp, url_prefix="/api/packages")
+    app.register_blueprint(calendar_bp, url_prefix="/api/calendar")

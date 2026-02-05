@@ -18,6 +18,7 @@ import {
     getStudentPackages,
     assignPackage,
 } from "../api/admin";
+import { apiFetch } from "../api/client";
 import { loadAuth, logout } from "../auth/authStore";
 import { useNavigate } from "react-router-dom";
 
@@ -30,12 +31,14 @@ export default function AdminPage() {
     const nav = useNavigate();
     const { user } = loadAuth();
 
-    const [tab, setTab] = useState("teachers"); // teachers | students | link | lessons | packages
+    const [tab, setTab] = useState("teachers"); // teachers | students | link | lessons | packages | deleted
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
 
     const [teachers, setTeachers] = useState([]);
     const [students, setStudents] = useState([]);
+    const [deletedTeachers, setDeletedTeachers] = useState([]);
+    const [deletedStudents, setDeletedStudents] = useState([]);
     const [enrollments, setEnrollments] = useState([]);
     const [lessons, setLessons] = useState([]);
     const [packages, setPackages] = useState([]);
@@ -53,10 +56,12 @@ export default function AdminPage() {
     const [newStudentGrade, setNewStudentGrade] = useState("");
     const [newStudentEmail, setNewStudentEmail] = useState("");
     const [newStudentPassword, setNewStudentPassword] = useState("");
+    const [newStudentPhones, setNewStudentPhones] = useState("");
 
     const [newTeacherName, setNewTeacherName] = useState("");
     const [newTeacherEmail, setNewTeacherEmail] = useState("");
     const [newTeacherPassword, setNewTeacherPassword] = useState("");
+    const [newTeacherPhones, setNewTeacherPhones] = useState("");
 
     const [linkTeacherId, setLinkTeacherId] = useState("");
     const [linkStudentId, setLinkStudentId] = useState("");
@@ -74,13 +79,15 @@ export default function AdminPage() {
         setLoading(true);
         setErr("");
         try {
-            const [t, s, e, l, p, sp] = await Promise.all([
+            const [t, s, e, l, p, sp, dt, ds] = await Promise.all([
                 getTeachers(),
                 getStudents(),
                 getEnrollments(),
                 getLessonSessions(),
                 getPackages(),
                 getStudentPackages(),
+                apiFetch("/api/users?include_deleted=1", { method: "GET", token: loadAuth().token }),
+                apiFetch("/api/students?include_deleted=1", { method: "GET", token: loadAuth().token }),
             ]);
             setTeachers(Array.isArray(t) ? t : (t?.items ?? []));
             setStudents(Array.isArray(s) ? s : (s?.items ?? []));
@@ -88,6 +95,8 @@ export default function AdminPage() {
             setLessons(Array.isArray(l) ? l : (l?.items ?? []));
             setPackages(Array.isArray(p) ? p : (p?.items ?? []));
             setStudentPackages(Array.isArray(sp) ? sp : (sp?.items ?? []));
+            setDeletedTeachers((Array.isArray(dt) ? dt : (dt?.items ?? [])).filter((u) => u.role_key === "TEACHER" && !u.is_active));
+            setDeletedStudents(Array.isArray(ds) ? ds.filter((st) => st.deleted_at) : []);
         } catch (ex) {
             setErr(ex?.message || "Yükleme hatası");
         } finally {
@@ -128,12 +137,14 @@ export default function AdminPage() {
                 grade: newStudentGrade ? Number(newStudentGrade) : null,
                 email: newStudentEmail,
                 password: newStudentPassword,
+                phones: newStudentPhones,
             };
             await createStudent(payload);
             setNewStudentName("");
             setNewStudentGrade("");
             setNewStudentEmail("");
             setNewStudentPassword("");
+            setNewStudentPhones("");
             await loadAll();
             setTab("students");
         } catch (ex) {
@@ -166,11 +177,13 @@ export default function AdminPage() {
                 email: newTeacherEmail,
                 password: newTeacherPassword,
                 role_key: "TEACHER",
+                phones: newTeacherPhones,
             };
             await createTeacher(payload);
             setNewTeacherName("");
             setNewTeacherEmail("");
             setNewTeacherPassword("");
+            setNewTeacherPhones("");
             await loadAll();
             setTab("teachers");
         } catch (ex) {
@@ -319,6 +332,9 @@ export default function AdminPage() {
                 <button onClick={() => setTab("packages")} style={{ fontWeight: tab === "packages" ? "700" : "400" }}>
                     Paketler
                 </button>
+                <button onClick={() => setTab("deleted")} style={{ fontWeight: tab === "deleted" ? "700" : "400" }}>
+                    Silinenler
+                </button>
             </div>
 
             {err ? (
@@ -356,6 +372,9 @@ export default function AdminPage() {
                                                 </div>
                                                 <div style={{ fontSize: 13, opacity: 0.75 }}>
                                                     {t.email || ""}
+                                                </div>
+                                                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                                    {t.phones || "-"}
                                                 </div>
                                                 <div style={{ fontSize: 13, opacity: 0.75 }}>
                                                     Ücret/Ders: {t.teacher_rate ?? "-"}
@@ -430,6 +449,11 @@ export default function AdminPage() {
                                 onChange={(e) => setNewTeacherEmail(e.target.value)}
                             />
                             <input
+                                placeholder="Telefonlar (virgül ile)"
+                                value={newTeacherPhones}
+                                onChange={(e) => setNewTeacherPhones(e.target.value)}
+                            />
+                            <input
                                 placeholder="Şifre"
                                 type="password"
                                 value={newTeacherPassword}
@@ -457,18 +481,34 @@ export default function AdminPage() {
                                 <tr style={{ textAlign: "left" }}>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sınıf</th>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Telefonlar</th>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Paket</th>
+                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Kalan</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>ID</th>
                                     <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {students.map((s) => (
+                                {students.map((s) => {
+                                    const sp = studentPackages.find((p) => p.student_id === s.id && p.status === "ACTIVE") ||
+                                        studentPackages.find((p) => p.student_id === s.id);
+                                    const pk = packages.find((p) => p.id === sp?.package_id);
+                                    return (
                                     <tr key={s.id}>
                                         <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                             {s.full_name}
                                         </td>
                                         <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                             {s.grade ?? "-"}
+                                        </td>
+                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                            {s.phones || "-"}
+                                        </td>
+                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                            {pk?.name || "-"}
+                                        </td>
+                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                            {sp ? sp.remaining_lessons : "-"}
                                         </td>
                                         <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                             {s.id}
@@ -479,7 +519,8 @@ export default function AdminPage() {
                                             </button>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -501,6 +542,11 @@ export default function AdminPage() {
                                 placeholder="Email"
                                 value={newStudentEmail}
                                 onChange={(e) => setNewStudentEmail(e.target.value)}
+                            />
+                            <input
+                                placeholder="Telefonlar (virgül ile)"
+                                value={newStudentPhones}
+                                onChange={(e) => setNewStudentPhones(e.target.value)}
                             />
                             <input
                                 placeholder="Şifre"
@@ -791,7 +837,7 @@ export default function AdminPage() {
                                     {studentPackages.map((sp) => {
                                         const st = students.find((s) => s.id === sp.student_id);
                                         const pk = packages.find((p) => p.id === sp.package_id);
-                                        const canRenew = sp.status === "ACTIVE" && sp.remaining_lessons <= 1;
+                                        const canRenew = sp.remaining_lessons <= 1;
                                         return (
                                             <tr key={sp.id}>
                                                 <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{st?.full_name || sp.student_id}</td>
@@ -873,6 +919,59 @@ export default function AdminPage() {
                                 Ata
                             </button>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* DELETED TAB */}
+            {tab === "deleted" && !loading && (
+                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                        <h3 style={{ marginTop: 0 }}>Silinen Öğretmenler ({deletedTeachers.length})</h3>
+                        {deletedTeachers.length === 0 ? (
+                            <div>Kayıt yok.</div>
+                        ) : (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                    <tr style={{ textAlign: "left" }}>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Email</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {deletedTeachers.map((t) => (
+                                        <tr key={t.id}>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{t.full_name}</td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{t.email}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                        <h3 style={{ marginTop: 0 }}>Silinen Öğrenciler ({deletedStudents.length})</h3>
+                        {deletedStudents.length === 0 ? (
+                            <div>Kayıt yok.</div>
+                        ) : (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                    <tr style={{ textAlign: "left" }}>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Email</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {deletedStudents.map((s) => (
+                                        <tr key={s.id}>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{s.full_name}</td>
+                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{s.email || "-"}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             )}

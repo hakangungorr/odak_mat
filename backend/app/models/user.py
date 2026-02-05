@@ -20,6 +20,7 @@ class User(BaseModel):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     teacher_rate = db.Column(db.Numeric(12, 2), nullable=True)
     deleted_at = db.Column(db.DateTime, nullable=True)
+    phones = db.Column(db.Text, nullable=True)
 
     def set_password(self, raw_password: str):
         self.password_hash = generate_password_hash(raw_password)

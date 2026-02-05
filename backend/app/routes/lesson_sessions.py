@@ -303,6 +303,14 @@ def create_lesson_session():
         if not ok:
             return jsonify({"message": "forbidden_student"}), 403
 
+        # package check: remaining lessons must be > 0
+        sp = StudentPackage.query.filter_by(
+            student_id=student_id_parsed,
+            status=PackageStatus.ACTIVE
+        ).order_by(StudentPackage.id.desc()).first()
+        if not sp or sp.remaining_lessons <= 0:
+            return jsonify({"message": "no_remaining_lessons"}), 409
+
         status_enum = SessionStatus.PLANNED
 
     s = LessonSession(
@@ -450,9 +458,6 @@ def teacher_mark(session_id: int):
     rating = data.get("teacher_rating_to_student")
     note = data.get("teacher_mark_note")
 
-    if not note or not str(note).strip():
-        return jsonify({"message": "teacher_mark_note zorunlu"}), 400
-
     if rating is not None:
         parsed = parse_int(rating, "teacher_rating_to_student", required=False)
         if isinstance(parsed, tuple):
@@ -507,9 +512,7 @@ def student_mark(session_id: int):
     data = request.get_json(silent=True) or {}
     done = data.get("done", True)
 
-    rating = data.get("student_rating_to_teacher") or data.get("rating")
-    note = data.get("student_note") or data.get("note")
-
+    # student does not provide rating/note anymore
     if not s.teacher_marked_at:
         return jsonify({"message": "teacher_mark_required"}), 409
 
@@ -524,29 +527,7 @@ def student_mark(session_id: int):
             return jsonify({"message": "DB error", "error": str(ex)}), 400
         return jsonify(s.to_dict()), 200
 
-    # öğrenci sadece kalan ders 1 ise puanlayabilir (puan/veri varsa kontrol)
-    if rating is not None or note is not None:
-        sp = StudentPackage.query.filter_by(student_id=s.student_id, status=PackageStatus.ACTIVE).order_by(StudentPackage.id.desc()).first()
-        if not sp:
-            return jsonify({"message": "active_package_required_for_rating"}), 409
-        if sp.end_date and sp.end_date < datetime.utcnow():
-            sp.status = PackageStatus.EXPIRED
-            db.session.commit()
-            return jsonify({"message": "package_expired"}), 409
-        if sp.remaining_lessons > 1:
-            return jsonify({"message": "rating_allowed_only_when_remaining_lessons_is_1", "remaining_lessons": sp.remaining_lessons}), 409
-
-    if rating is not None:
-        parsed = parse_int(rating, "student_rating_to_teacher", required=False)
-        if isinstance(parsed, tuple):
-            return parsed
-        rating_int = parsed
-        if rating_int < 1 or rating_int > 5:
-            return jsonify({"message": "rating must be 1-5"}), 400
-        s.student_rating_to_teacher = rating_int
-
-    if note is not None:
-        s.student_note = str(note).strip()
+    # no rating/note updates from student
 
     s.student_marked_at = datetime.utcnow()
     s.status = recalc_status(s)

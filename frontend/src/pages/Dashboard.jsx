@@ -14,7 +14,7 @@ export default function Dashboard() {
     const [reports, setReports] = useState([]);
     const [packages, setPackages] = useState([]);
     const [packageDefs, setPackageDefs] = useState([]);
-    const [markInputs, setMarkInputs] = useState({});
+    const [externalEvents, setExternalEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
 
@@ -22,7 +22,7 @@ export default function Dashboard() {
         setLoading(true);
         setErr("");
         try {
-            const [me, enr, sess, hws, reps, pkgs, defs] = await Promise.all([
+            const [me, enr, sess, hws, reps, pkgs, defs, cal] = await Promise.all([
                 apiFetch("/api/students/me", { method: "GET", token }),
                 apiFetch("/api/enrollments", { method: "GET", token }),
                 apiFetch("/api/lesson-sessions", { method: "GET", token }),
@@ -30,14 +30,26 @@ export default function Dashboard() {
                 apiFetch("/api/lesson-reports", { method: "GET", token }),
                 apiFetch("/api/packages/student-packages", { method: "GET", token }),
                 apiFetch("/api/packages", { method: "GET", token }),
+                apiFetch("/api/calendar/public-calendar", { method: "GET", token }),
             ]);
             setStudent(me || null);
             setEnrollments(Array.isArray(enr) ? enr : (enr?.items ?? []));
-            setSessions(Array.isArray(sess) ? sess : (sess?.items ?? []));
+            const sessItems = Array.isArray(sess) ? sess : (sess?.items ?? []);
+            const now = new Date();
+            setSessions(
+                sessItems.filter((s) => {
+                    if (s.status === "COMPLETED") return false;
+                    if (!s.scheduled_start) return true;
+                    const dt = new Date(s.scheduled_start);
+                    if (Number.isNaN(dt.getTime())) return true;
+                    return dt >= now;
+                })
+            );
             setHomeworks(Array.isArray(hws) ? hws : (hws?.items ?? []));
             setReports(Array.isArray(reps) ? reps : (reps?.items ?? []));
             setPackages(Array.isArray(pkgs) ? pkgs : (pkgs?.items ?? []));
             setPackageDefs(Array.isArray(defs) ? defs : (defs?.items ?? []));
+            setExternalEvents(Array.isArray(cal?.items) ? cal.items : []);
         } catch (ex) {
             setErr(ex?.message || "Veriler yüklenemedi");
         } finally {
@@ -61,15 +73,77 @@ export default function Dashboard() {
     const completionRate = sessions.length ? Math.round((completedCount / sessions.length) * 100) : 0;
     const activePackage = packages.find((p) => p.status === "ACTIVE") || null;
 
+    function formatDatePart(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "-";
+        return d.toLocaleDateString();
+    }
+
+    function formatTimePart(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "-";
+        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function groupSessionsByDate(items) {
+        const map = new Map();
+        for (const s of items) {
+            const key = formatDatePart(s.scheduled_start);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(s);
+        }
+        return Array.from(map.entries());
+    }
+    const [monthOffset, setMonthOffset] = useState(0);
+
+    function buildMonthDays(offset = 0) {
+        const now = new Date();
+        const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+        const days = [];
+        const startDay = first.getDay();
+        for (let i = 0; i < startDay; i += 1) days.push(null);
+        for (let d = 1; d <= last.getDate(); d += 1) {
+            days.push(new Date(first.getFullYear(), first.getMonth(), d));
+        }
+        return { first, days };
+    }
+
+    function toKey(d) {
+        return d.toISOString().slice(0, 10);
+    }
+
+    function mergeCalendarItems() {
+        const items = [];
+        sessions.forEach((s) => {
+            if (!s.scheduled_start) return;
+            items.push({
+                date: s.scheduled_start.slice(0, 10),
+                time: formatTimePart(s.scheduled_start),
+                title: s.topic ? `Ders: ${s.topic}` : "Ders",
+                type: "lesson",
+            });
+        });
+        externalEvents.forEach((e) => {
+            if (!e.start) return;
+            items.push({
+                date: e.start.slice(0, 10),
+                time: formatTimePart(e.start),
+                title: e.summary || "Etkinlik",
+                type: "external",
+            });
+        });
+        return items;
+    }
+
     async function onStudentMark(sessionId) {
         try {
-            const payload = markInputs[sessionId] || {};
             await apiFetch(`/api/lesson-sessions/${sessionId}/student-mark`, {
                 method: "PATCH",
                 token,
                 body: {
-                    student_rating_to_teacher: payload.rating ? Number(payload.rating) : undefined,
-                    student_note: payload.note || undefined,
                     done: true,
                 },
             });
@@ -173,24 +247,19 @@ export default function Dashboard() {
                                 Onayını bekleyen ders: {pendingForStudent.length}
                             </div>
                         )}
-                        {packages.find((p) => p.status === "ACTIVE")?.remaining_lessons !== 1 && (
-                            <div style={{ marginBottom: 10, fontSize: 13, color: "#6b7280" }}>
-                                Not ve puan vermek için kalan ders hakkın 1 olmalı. Onaylama her zaman yapılabilir.
-                            </div>
-                        )}
                         {sessions.length === 0 ? (
                             <div>Henüz ders planı yok.</div>
                         ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <table className="table-desktop" style={{ width: "100%", borderCollapse: "collapse" }}>
                                 <thead>
                                     <tr style={{ textAlign: "left" }}>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Saat</th>
+                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Mod</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Not</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>İptal Eden</th>
                                         <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
                                     </tr>
@@ -206,13 +275,17 @@ export default function Dashboard() {
                                         }[s.status] || "#111827";
                                         const canMark = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status);
                                         const canCancel = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at;
-                                        const remaining = activePackage?.remaining_lessons;
-                                        const canRate = remaining === 1;
                                         const canConfirm = s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION";
                                         return (
                                             <tr key={s.id}>
                                                 <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
+                                                    {formatDatePart(s.scheduled_start)}
+                                                </td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                    {formatTimePart(s.scheduled_start)}
+                                                </td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                    {s.topic || "-"}
                                                 </td>
                                                 <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                                     {s.duration_min} dk
@@ -235,41 +308,6 @@ export default function Dashboard() {
                                                 </td>
                                                 <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                                     {s.teacher_mark_note || "-"}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {canRate && canConfirm ? (
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            max="5"
-                                                            value={markInputs[s.id]?.rating || ""}
-                                                            onChange={(e) =>
-                                                                setMarkInputs((prev) => ({
-                                                                    ...prev,
-                                                                    [s.id]: { ...(prev[s.id] || {}), rating: e.target.value },
-                                                                }))
-                                                            }
-                                                            style={{ width: 60 }}
-                                                        />
-                                                    ) : (
-                                                        "-"
-                                                    )}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {canRate && canConfirm ? (
-                                                        <input
-                                                            value={markInputs[s.id]?.note || ""}
-                                                            onChange={(e) =>
-                                                                setMarkInputs((prev) => ({
-                                                                    ...prev,
-                                                                    [s.id]: { ...(prev[s.id] || {}), note: e.target.value },
-                                                                }))
-                                                            }
-                                                            placeholder="Not"
-                                                        />
-                                                    ) : (
-                                                        "-"
-                                                    )}
                                                 </td>
                                                 <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
                                                     {s.cancelled_by_role || "-"}
@@ -302,6 +340,84 @@ export default function Dashboard() {
                                 </tbody>
                             </table>
                         )}
+                        <div className="stack-cards">
+                            {sessions.map((s) => (
+                                <div key={s.id} className="stack-card">
+                                    <div><strong>Tarih:</strong> {formatDatePart(s.scheduled_start)}</div>
+                                    <div><strong>Saat:</strong> {formatTimePart(s.scheduled_start)}</div>
+                                    <div><strong>Konu:</strong> {s.topic || "-"}</div>
+                                    <div><strong>Süre:</strong> {s.duration_min} dk</div>
+                                    <div><strong>Durum:</strong> {s.status}</div>
+                                    <div><strong>Öğretmen Notu:</strong> {s.teacher_mark_note || "-"}</div>
+                                    <div style={{ marginTop: 8 }}>
+                                        <button
+                                            disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status)) || !!s.student_marked_at || !(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
+                                            onClick={() => onStudentMark(s.id)}
+                                        >
+                                            {s.student_marked_at ? "Onaylandı" : "Dersi Onayla"}
+                                        </button>
+                                        <button
+                                            style={{ marginTop: 6 }}
+                                            disabled={!(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
+                                            onClick={() => onStudentNoShow(s.id)}
+                                        >
+                                            Yapılmadı
+                                        </button>
+                                        <button
+                                            style={{ marginTop: 6 }}
+                                            disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at)}
+                                            onClick={() => onStudentCancel(s.id)}
+                                        >
+                                            İptal Et
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="calendar-wrap">
+                        <div className="calendar-header">
+                            <h3 style={{ margin: 0 }}>Takvim (Ders + Google)</h3>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <button onClick={() => setMonthOffset((m) => m - 1)}>‹</button>
+                                <button onClick={() => setMonthOffset(0)}>Bugün</button>
+                                <button onClick={() => setMonthOffset((m) => m + 1)}>›</button>
+                            </div>
+                        </div>
+                        {(() => {
+                            const { first, days } = buildMonthDays(monthOffset);
+                            const items = mergeCalendarItems();
+                            const byDate = new Map();
+                            items.forEach((it) => {
+                                if (!byDate.has(it.date)) byDate.set(it.date, []);
+                                byDate.get(it.date).push(it);
+                            });
+                            return (
+                                <>
+                                    <div style={{ marginBottom: 8, color: "#5e5e67" }}>
+                                        {first.toLocaleString([], { month: "long", year: "numeric" })}
+                                    </div>
+                                    <div className="calendar-grid">
+                                        {days.map((d, idx) => {
+                                            if (!d) return <div key={`e-${idx}`} className="calendar-cell" />;
+                                            const key = toKey(d);
+                                            const dayItems = byDate.get(key) || [];
+                                            return (
+                                                <div key={key} className="calendar-cell">
+                                                    <div className="calendar-day">{d.getDate()}</div>
+                                                    {dayItems.map((it, i) => (
+                                                        <span key={`${key}-${i}`} className={`calendar-item ${it.type}`}>
+                                                            {it.time} · {it.title}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
 
                     <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
@@ -328,29 +444,37 @@ export default function Dashboard() {
                         )}
                     </div>
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Ders Raporları ({reports.length})</h3>
-                        {reports.length === 0 ? (
-                            <div>Rapor yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {reports.map((r) => (
-                                        <tr key={r.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
+                    {sessions.some((s) => s.teacher_marked_at) && (
+                        <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                            <h3 style={{ marginTop: 0 }}>Ders Raporları ({reports.length})</h3>
+                            {reports.length === 0 ? (
+                                <div>Rapor yok.</div>
+                            ) : (
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                    <thead>
+                                        <tr style={{ textAlign: "left" }}>
+                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
+                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
+                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
+                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
+                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sonraki Ders Notu</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                    </thead>
+                                    <tbody>
+                                        {reports.map((r) => (
+                                            <tr key={r.id}>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{formatDatePart(r.created_at)}</td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.teacher_note || "-"}</td>
+                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.next_note || "-"}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
 
                     <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
                         <h3 style={{ marginTop: 0 }}>Paketlerim ({packages.length})</h3>
@@ -385,3 +509,4 @@ export default function Dashboard() {
         </div>
     );
 }
+
