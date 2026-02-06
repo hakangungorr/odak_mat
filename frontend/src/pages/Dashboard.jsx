@@ -17,6 +17,7 @@ export default function Dashboard() {
     const [externalEvents, setExternalEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
+    const [tab, setTab] = useState("overview");
 
     async function loadData() {
         setLoading(true);
@@ -186,327 +187,384 @@ export default function Dashboard() {
     const pendingForStudent = sessions.filter((s) => s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION");
 
     return (
-        <div style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                <div>
-                    <h2 style={{ margin: 0 }}>Öğrenci Paneli</h2>
-                    <div style={{ fontSize: 13, opacity: 0.75 }}>
+        <div className="page narrow">
+            <div className="page-header">
+                <div className="page-title">
+                    <h2>Öğrenci Paneli</h2>
+                    <div className="page-subtitle">
                         {user?.email || "student"} · {user?.role || "STUDENT"}
                     </div>
+
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={loadData} disabled={loading}>Yenile</button>
-                    <button onClick={onLogout}>Çıkış</button>
+                <div className="page-actions">
+                    <button className="btn-secondary" onClick={loadData} disabled={loading}>Yenile</button>
+                    <button className="btn-ghost" onClick={onLogout}>Çıkış</button>
                 </div>
             </div>
 
             {err ? <div style={{ marginTop: 12, color: "crimson" }}>{err}</div> : null}
             {loading ? <div style={{ marginTop: 12 }}>Yükleniyor…</div> : null}
 
+            <div className="tabs">
+                <button className={`tab-btn ${tab === "overview" ? "active" : ""}`} onClick={() => setTab("overview")}>Genel</button>
+                <button className={`tab-btn ${tab === "lessons" ? "active" : ""}`} onClick={() => setTab("lessons")}>Dersler</button>
+                <button className={`tab-btn ${tab === "calendar" ? "active" : ""}`} onClick={() => setTab("calendar")}>Takvim</button>
+                <button className={`tab-btn ${tab === "reports" ? "active" : ""}`} onClick={() => setTab("reports")}>Raporlar</button>
+                <button className={`tab-btn ${tab === "homeworks" ? "active" : ""}`} onClick={() => setTab("homeworks")}>Ödevler</button>
+                <button className={`tab-btn ${tab === "packages" ? "active" : ""}`} onClick={() => setTab("packages")}>Paketler</button>
+            </div>
+
             {!loading && (
-                <div style={{ marginTop: 16, display: "grid", gap: 16 }}>
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Profil</h3>
-                        {student ? (
-                            <div style={{ display: "grid", gap: 6 }}>
-                                <div><strong>Ad Soyad:</strong> {student.full_name}</div>
-                                <div><strong>Sınıf:</strong> {student.grade ?? "-"}</div>
-                                <div><strong>Öğrenci ID:</strong> {student.id}</div>
+                <>
+                    {tab === "overview" && (
+                        <div className="section-grid" style={{ marginTop: 16 }}>
+                            <div className="card">
+                                <h3 className="section-title">Profil</h3>
+                                {student ? (
+                                    <div style={{ display: "grid", gap: 6 }}>
+                                        <div><strong>Ad Soyad:</strong> {student.full_name}</div>
+                                        <div><strong>Sınıf:</strong> {student.grade ?? "-"}</div>
+                                        <div><strong>Ögrenci ID:</strong> {student.id}</div>
+                                    </div>
+                                ) : (
+                                    <div>Profil bulunamadı.</div>
+                                )}
                             </div>
-                        ) : (
-                            <div>Profil bulunamadı.</div>
-                        )}
-                    </div>
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Öğretmen Bilgisi</h3>
-                        {activeEnrollment ? (
-                            <div style={{ display: "grid", gap: 6 }}>
-                                <div><strong>Ad Soyad:</strong> {teacher?.full_name || "-"}</div>
-                                <div><strong>Email:</strong> {teacher?.email || "-"}</div>
-                                <div><strong>Öğretmen ID:</strong> {activeEnrollment.teacher_user_id}</div>
-                                <div><strong>Durum:</strong> {activeEnrollment.status}</div>
+                            <div className="card">
+                                <h3 className="section-title">Ögretmen Bilgisi</h3>
+                                {activeEnrollment ? (
+                                    <div style={{ display: "grid", gap: 6 }}>
+                                        <div><strong>Ad Soyad:</strong> {teacher?.full_name || "-"}</div>
+                                        <div><strong>Email:</strong> {teacher?.email || "-"}</div>
+                                        <div><strong>Ögretmen ID:</strong> {activeEnrollment.teacher_user_id}</div>
+                                        <div><strong>Durum:</strong> {activeEnrollment.status}</div>
+                                    </div>
+                                ) : (
+                                    <div>Henüz ögretmen ataması yok.</div>
+                                )}
                             </div>
-                        ) : (
-                            <div>Henüz öğretmen ataması yok.</div>
-                        )}
-                    </div>
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>İlerleme</h3>
-                        <div><strong>Toplam ders:</strong> {sessions.length}</div>
-                        <div><strong>Tamamlanan:</strong> {completedCount}</div>
-                        <div><strong>Planlanan:</strong> {plannedCount}</div>
-                        <div><strong>Başarı oranı:</strong> %{completionRate}</div>
-                    </div>
-
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Derslerim ({sessions.length})</h3>
-                        {pendingForStudent.length > 0 && (
-                            <div style={{ marginBottom: 10, fontSize: 13, color: "#7c2d12" }}>
-                                Onayını bekleyen ders: {pendingForStudent.length}
-                            </div>
-                        )}
-                        {sessions.length === 0 ? (
-                            <div>Henüz ders planı yok.</div>
-                        ) : (
-                            <table className="table-desktop" style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Saat</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Mod</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>İptal Eden</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sessions.map((s) => {
-                                        const statusColor = {
-                                            PLANNED: "#2563eb",
-                                            PENDING_CONFIRMATION: "#b45309",
-                                            COMPLETED: "#15803d",
-                                            CANCELLED: "#b91c1c",
-                                            MISSED: "#6b7280",
-                                        }[s.status] || "#111827";
-                                        const canMark = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status);
-                                        const canCancel = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at;
-                                        const canConfirm = s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION";
-                                        return (
-                                            <tr key={s.id}>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {formatDatePart(s.scheduled_start)}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {formatTimePart(s.scheduled_start)}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.topic || "-"}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.duration_min} dk
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.mode}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    <span style={{
-                                                        display: "inline-block",
-                                                        padding: "2px 8px",
-                                                        borderRadius: 999,
-                                                        background: statusColor + "22",
-                                                        color: statusColor,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                    }}>
-                                                        {s.status}
-                                                    </span>
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.teacher_mark_note || "-"}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {s.cancelled_by_role || "-"}
-                                                </td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    <button
-                                                        disabled={!canMark || !!s.student_marked_at || !canConfirm}
-                                                        onClick={() => onStudentMark(s.id)}
-                                                    >
-                                                        {s.student_marked_at ? "Onaylandı" : "Dersi Onayla"}
-                                                    </button>
-                                                    <button
-                                                        style={{ marginLeft: 6 }}
-                                                        disabled={!canConfirm}
-                                                        onClick={() => onStudentNoShow(s.id)}
-                                                    >
-                                                        Yapılmadı
-                                                    </button>
-                                                    <button
-                                                        style={{ marginLeft: 6 }}
-                                                        disabled={!canCancel}
-                                                        onClick={() => onStudentCancel(s.id)}
-                                                    >
-                                                        İptal Et
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        )}
-                        <div className="stack-cards">
-                            {sessions.map((s) => (
-                                <div key={s.id} className="stack-card">
-                                    <div><strong>Tarih:</strong> {formatDatePart(s.scheduled_start)}</div>
-                                    <div><strong>Saat:</strong> {formatTimePart(s.scheduled_start)}</div>
-                                    <div><strong>Konu:</strong> {s.topic || "-"}</div>
-                                    <div><strong>Süre:</strong> {s.duration_min} dk</div>
-                                    <div><strong>Durum:</strong> {s.status}</div>
-                                    <div><strong>Öğretmen Notu:</strong> {s.teacher_mark_note || "-"}</div>
-                                    <div style={{ marginTop: 8 }}>
-                                        <button
-                                            disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status)) || !!s.student_marked_at || !(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
-                                            onClick={() => onStudentMark(s.id)}
-                                        >
-                                            {s.student_marked_at ? "Onaylandı" : "Dersi Onayla"}
-                                        </button>
-                                        <button
-                                            style={{ marginTop: 6 }}
-                                            disabled={!(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
-                                            onClick={() => onStudentNoShow(s.id)}
-                                        >
-                                            Yapılmadı
-                                        </button>
-                                        <button
-                                            style={{ marginTop: 6 }}
-                                            disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at)}
-                                            onClick={() => onStudentCancel(s.id)}
-                                        >
-                                            İptal Et
-                                        </button>
+                            <div className="card">
+                                <h3 className="section-title">İlerleme</h3>
+                                <div className="stat-grid">
+                                    <div className="stat-card">
+                                        <div className="stat-label">Toplam Ders</div>
+                                        <div className="stat-value">{sessions.length}</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <div className="stat-label">Tamamlanan</div>
+                                        <div className="stat-value">{completedCount}</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <div className="stat-label">Planlanan</div>
+                                        <div className="stat-value">{plannedCount}</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <div className="stat-label">Başarı Oranı</div>
+                                        <div className="stat-value">%{completionRate}</div>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="calendar-wrap">
-                        <div className="calendar-header">
-                            <h3 style={{ margin: 0 }}>Takvim (Ders + Google)</h3>
-                            <div style={{ display: "flex", gap: 8 }}>
-                                <button onClick={() => setMonthOffset((m) => m - 1)}>‹</button>
-                                <button onClick={() => setMonthOffset(0)}>Bugün</button>
-                                <button onClick={() => setMonthOffset((m) => m + 1)}>›</button>
                             </div>
                         </div>
-                        {(() => {
-                            const { first, days } = buildMonthDays(monthOffset);
-                            const items = mergeCalendarItems();
-                            const byDate = new Map();
-                            items.forEach((it) => {
-                                if (!byDate.has(it.date)) byDate.set(it.date, []);
-                                byDate.get(it.date).push(it);
-                            });
-                            return (
-                                <>
-                                    <div style={{ marginBottom: 8, color: "#5e5e67" }}>
-                                        {first.toLocaleString([], { month: "long", year: "numeric" })}
-                                    </div>
-                                    <div className="calendar-grid">
-                                        {days.map((d, idx) => {
-                                            if (!d) return <div key={`e-${idx}`} className="calendar-cell" />;
-                                            const key = toKey(d);
-                                            const dayItems = byDate.get(key) || [];
-                                            return (
-                                                <div key={key} className="calendar-cell">
-                                                    <div className="calendar-day">{d.getDate()}</div>
-                                                    {dayItems.map((it, i) => (
-                                                        <span key={`${key}-${i}`} className={`calendar-item ${it.type}`}>
-                                                            {it.time} · {it.title}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            );
-                        })()}
-                    </div>
+                    )}
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Ödevlerim ({homeworks.length})</h3>
-                        {homeworks.length === 0 ? (
-                            <div>Ödev yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Başlık</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {homeworks.map((h) => (
-                                        <tr key={h.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{h.title}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{h.status}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-
-                    {sessions.some((s) => s.teacher_marked_at) && (
-                        <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                            <h3 style={{ marginTop: 0 }}>Ders Raporları ({reports.length})</h3>
-                            {reports.length === 0 ? (
-                                <div>Rapor yok.</div>
+                    {tab === "lessons" && (
+                        <div className="card" style={{ marginTop: 16 }}>
+                            <h3 className="section-title">Derslerim ({sessions.length})</h3>
+                            {pendingForStudent.length > 0 && (
+                                <div style={{ marginBottom: 10, fontSize: 13, color: "#7c2d12" }}>
+                                    Onayını bekleyen ders: {pendingForStudent.length}
+                                </div>
+                            )}
+                            {sessions.length === 0 ? (
+                                <div>Henüz ders planı yok.</div>
                             ) : (
-                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                    <thead>
-                                        <tr style={{ textAlign: "left" }}>
-                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
-                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
-                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
-                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
-                                            <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sonraki Ders Notu</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {reports.map((r) => (
-                                            <tr key={r.id}>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{formatDatePart(r.created_at)}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.teacher_note || "-"}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.next_note || "-"}</td>
+                                <div className="table-wrap">
+                                    <table className="table-desktop">
+                                        <thead>
+                                            <tr style={{ textAlign: "left" }}>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Saat</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Mod</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen Notu</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>İptal Eden</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {sessions.map((s) => {
+                                                const statusColor = {
+                                                    PLANNED: "#2563eb",
+                                                    PENDING_CONFIRMATION: "#b45309",
+                                                    COMPLETED: "#15803d",
+                                                    CANCELLED: "#b91c1c",
+                                                    MISSED: "#6b7280",
+                                                }[s.status] || "#111827";
+                                                const canMark = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status);
+                                                const canCancel = !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at;
+                                                const canConfirm = s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION";
+                                                return (
+                                                    <tr key={s.id}>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {formatDatePart(s.scheduled_start)}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {formatTimePart(s.scheduled_start)}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {s.topic || "-"}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {s.duration_min} dk
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {s.mode}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            <span style={{
+                                                                display: "inline-block",
+                                                                padding: "2px 8px",
+                                                                borderRadius: 999,
+                                                                background: statusColor + "22",
+                                                                color: statusColor,
+                                                                fontSize: 12,
+                                                                fontWeight: 600,
+                                                            }}>
+                                                                {s.status}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {s.teacher_mark_note || "-"}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            {s.cancelled_by_role || "-"}
+                                                        </td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
+                                                            <button
+                                                                disabled={!canMark || !!s.student_marked_at || !canConfirm}
+                                                                onClick={() => onStudentMark(s.id)}
+                                                            >
+                                                                {s.student_marked_at ? "Onaylandı" : "Dersi Onayla"}
+                                                            </button>
+                                                            <button
+                                                                style={{ marginLeft: 6 }}
+                                                                disabled={!canConfirm}
+                                                                onClick={() => onStudentNoShow(s.id)}
+                                                            >
+                                                                Yapılmadı
+                                                            </button>
+                                                            <button
+                                                                style={{ marginLeft: 6 }}
+                                                                disabled={!canCancel}
+                                                                onClick={() => onStudentCancel(s.id)}
+                                                            >
+                                                                İptal Et
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                            <div className="stack-cards">
+                                {sessions.map((s) => (
+                                    <div key={s.id} className="stack-card">
+                                        <div><strong>Tarih:</strong> {formatDatePart(s.scheduled_start)}</div>
+                                        <div><strong>Saat:</strong> {formatTimePart(s.scheduled_start)}</div>
+                                        <div><strong>Konu:</strong> {s.topic || "-"}</div>
+                                        <div><strong>Süre:</strong> {s.duration_min} dk</div>
+                                        <div><strong>Durum:</strong> {s.status}</div>
+                                        <div><strong>Öğretmen Notu:</strong> {s.teacher_mark_note || "-"}</div>
+                                        <div style={{ marginTop: 8 }}>
+                                            <button
+                                                disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status)) || !!s.student_marked_at || !(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
+                                                onClick={() => onStudentMark(s.id)}
+                                            >
+                                                {s.student_marked_at ? "Onaylandı" : "Dersi Onayla"}
+                                            </button>
+                                            <button
+                                                style={{ marginTop: 6 }}
+                                                disabled={!(s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION")}
+                                                onClick={() => onStudentNoShow(s.id)}
+                                            >
+                                                Yapılmadı
+                                            </button>
+                                            <button
+                                                style={{ marginTop: 6 }}
+                                                disabled={!(!["CANCELLED", "MISSED", "COMPLETED"].includes(s.status) && !s.teacher_marked_at)}
+                                                onClick={() => onStudentCancel(s.id)}
+                                            >
+                                                İptal Et
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === "calendar" && (
+                        <div className="calendar-wrap" style={{ marginTop: 16 }}>
+                            <div className="calendar-header">
+                                <h3 style={{ margin: 0 }}>Takvim (Ders + Google)</h3>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    <button onClick={() => setMonthOffset((m) => m - 1)}>?</button>
+                                    <button onClick={() => setMonthOffset(0)}>Bugün</button>
+                                    <button onClick={() => setMonthOffset((m) => m + 1)}>?</button>
+                                </div>
+                            </div>
+                            {(() => {
+                                const { first, days } = buildMonthDays(monthOffset);
+                                const items = mergeCalendarItems();
+                                const byDate = new Map();
+                                items.forEach((it) => {
+                                    if (!byDate.has(it.date)) byDate.set(it.date, []);
+                                    byDate.get(it.date).push(it);
+                                });
+                                return (
+                                    <>
+                                        <div style={{ marginBottom: 8, color: "#5e5e67" }}>
+                                            {first.toLocaleString([], { month: "long", year: "numeric" })}
+                                        </div>
+                                        <div className="calendar-grid">
+                                            {days.map((d, idx) => {
+                                                if (!d) return <div key={`e-${idx}`} className="calendar-cell" />;
+                                                const key = toKey(d);
+                                                const dayItems = byDate.get(key) || [];
+                                                return (
+                                                    <div key={key} className="calendar-cell">
+                                                        <div className="calendar-day">{d.getDate()}</div>
+                                                        {dayItems.map((it, i) => (
+                                                            <span key={`${key}-${i}`} className={`calendar-item ${it.type}`}>
+                                                                {it.time} ? {it.title}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
+
+                    {tab === "homeworks" && (
+                        <div className="card" style={{ marginTop: 16 }}>
+                            <h3 className="section-title">Ödevlerim ({homeworks.length})</h3>
+                            {homeworks.length === 0 ? (
+                                <div>Ödev yok.</div>
+                            ) : (
+                                <div className="table-wrap">
+                                    <table>
+                                        <thead>
+                                            <tr style={{ textAlign: "left" }}>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Başlık</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {homeworks.map((h) => (
+                                                <tr key={h.id}>
+                                                    <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{h.title}</td>
+                                                    <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{h.status}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
                         </div>
                     )}
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Paketlerim ({packages.length})</h3>
-                        {packages.length === 0 ? (
-                            <div>Paket yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Paket</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Kalan</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                {packages.map((p) => {
-                                    const def = packageDefs.find((d) => d.id === p.package_id);
-                                    return (
-                                    <tr key={p.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{def?.name || p.package_id}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.remaining_lessons}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.status}</td>
-                                    </tr>
-                                    );
-                                })}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-                </div>
+                    {tab === "reports" && sessions.some((s) => s.teacher_marked_at) && (
+                        <div className="card" style={{ marginTop: 16 }}>
+                            <h3 className="section-title">Ders Raporları ({reports.length})</h3>
+                            {reports.length === 0 ? (
+                                <div>Rapor yok.</div>
+                            ) : (
+                                <>
+                                    <div className="table-wrap">
+                                        <table className="table-desktop">
+                                            <thead>
+                                                <tr style={{ textAlign: "left" }}>
+                                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
+                                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Konu</th>
+                                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Puan</th>
+                                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ögretmen Notu</th>
+                                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sonraki Ders Notu</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {reports.map((r) => (
+                                                    <tr key={r.id}>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{formatDatePart(r.created_at)}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.topic || "-"}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.performance_rating ?? "-"}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.teacher_note || "-"}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{r.next_note || "-"}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="stack-cards">
+                                        {reports.map((r) => (
+                                            <div key={r.id} className="stack-card">
+                                                <div><strong>Tarih:</strong> {formatDatePart(r.created_at)}</div>
+                                                <div><strong>Konu:</strong> {r.topic || "-"}</div>
+                                                <div><strong>Puan:</strong> {r.performance_rating ?? "-"}</div>
+                                                <div><strong>Ogretmen Notu:</strong> {r.teacher_note || "-"}</div>
+                                                <div><strong>Sonraki Ders Notu:</strong> {r.next_note || "-"}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {tab === "packages" && (
+                        <div className="card" style={{ marginTop: 16 }}>
+                            <h3 className="section-title">Paketlerim ({packages.length})</h3>
+                            {packages.length === 0 ? (
+                                <div>Paket yok.</div>
+                            ) : (
+                                <div className="table-wrap">
+                                    <table>
+                                        <thead>
+                                            <tr style={{ textAlign: "left" }}>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Paket</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Kalan</th>
+                                                <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {packages.map((p) => {
+                                                const def = packageDefs.find((d) => d.id === p.package_id);
+                                                return (
+                                                    <tr key={p.id}>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{def?.name || p.package_id}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.remaining_lessons}</td>
+                                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.status}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </>
             )}
+
         </div>
     );
 }
-

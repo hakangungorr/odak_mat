@@ -31,7 +31,7 @@ export default function AdminPage() {
     const nav = useNavigate();
     const { user } = loadAuth();
 
-    const [tab, setTab] = useState("teachers"); // teachers | students | link | lessons | packages | deleted
+    const [tab, setTab] = useState("teachers");
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
 
@@ -43,12 +43,12 @@ export default function AdminPage() {
     const [lessons, setLessons] = useState([]);
     const [packages, setPackages] = useState([]);
     const [studentPackages, setStudentPackages] = useState([]);
+
     const [lessonFilterTeacher, setLessonFilterTeacher] = useState("");
     const [lessonFilterStudent, setLessonFilterStudent] = useState("");
     const [lessonFilterFrom, setLessonFilterFrom] = useState("");
     const [lessonFilterTo, setLessonFilterTo] = useState("");
     const [lessonFilterStatus, setLessonFilterStatus] = useState("");
-
     const [expandedTeacherId, setExpandedTeacherId] = useState(null);
 
     // forms
@@ -65,6 +65,7 @@ export default function AdminPage() {
 
     const [linkTeacherId, setLinkTeacherId] = useState("");
     const [linkStudentId, setLinkStudentId] = useState("");
+
     const [teacherRateEdits, setTeacherRateEdits] = useState({});
 
     const [newPackageName, setNewPackageName] = useState("");
@@ -86,17 +87,31 @@ export default function AdminPage() {
                 getLessonSessions(),
                 getPackages(),
                 getStudentPackages(),
-                apiFetch("/api/users?include_deleted=1", { method: "GET", token: loadAuth().token }),
-                apiFetch("/api/students?include_deleted=1", { method: "GET", token: loadAuth().token }),
+                apiFetch("/api/users?include_deleted=1", {
+                    method: "GET",
+                    token: loadAuth().token,
+                }),
+                apiFetch("/api/students?include_deleted=1", {
+                    method: "GET",
+                    token: loadAuth().token,
+                }),
             ]);
-            setTeachers(Array.isArray(t) ? t : (t?.items ?? []));
-            setStudents(Array.isArray(s) ? s : (s?.items ?? []));
-            setEnrollments(Array.isArray(e) ? e : (e?.items ?? []));
-            setLessons(Array.isArray(l) ? l : (l?.items ?? []));
-            setPackages(Array.isArray(p) ? p : (p?.items ?? []));
-            setStudentPackages(Array.isArray(sp) ? sp : (sp?.items ?? []));
-            setDeletedTeachers((Array.isArray(dt) ? dt : (dt?.items ?? [])).filter((u) => u.role_key === "TEACHER" && !u.is_active));
-            setDeletedStudents(Array.isArray(ds) ? ds.filter((st) => st.deleted_at) : []);
+
+            setTeachers(Array.isArray(t) ? t : t?.items ?? []);
+            setStudents(Array.isArray(s) ? s : s?.items ?? []);
+            setEnrollments(Array.isArray(e) ? e : e?.items ?? []);
+            setLessons(Array.isArray(l) ? l : l?.items ?? []);
+            setPackages(Array.isArray(p) ? p : p?.items ?? []);
+            setStudentPackages(Array.isArray(sp) ? sp : sp?.items ?? []);
+
+            setDeletedTeachers(
+                (Array.isArray(dt) ? dt : dt?.items ?? []).filter(
+                    (u) => u.role_key === "TEACHER" && !u.is_active
+                )
+            );
+            setDeletedStudents(
+                Array.isArray(ds) ? ds.filter((st) => st.deleted_at) : []
+            );
         } catch (ex) {
             setErr(ex?.message || "Yükleme hatası");
         } finally {
@@ -112,7 +127,8 @@ export default function AdminPage() {
     const teacherToStudentIds = useMemo(() => {
         const map = new Map();
         for (const en of enrollments) {
-            const tId = en.teacher_user_id ?? en.teacher_id ?? en.teacherId ?? en.teacher?.id;
+            const tId =
+                en.teacher_user_id ?? en.teacher_id ?? en.teacherId ?? en.teacher?.id;
             const sId = en.student_id ?? en.studentId ?? en.student?.id;
             if (!tId || !sId) continue;
             if (!map.has(tId)) map.set(tId, []);
@@ -201,6 +217,7 @@ export default function AdminPage() {
             setErr(ex?.message || "Öğretmen ücret güncelleme hatası");
         }
     }
+
     async function onDeleteTeacher(teacherUserId, teacherName) {
         const ok = window.confirm(`${teacherName || "Öğretmen"} silinsin mi?`);
         if (!ok) return;
@@ -300,276 +317,305 @@ export default function AdminPage() {
     }
 
     return (
-        <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                <div>
-                    <h2 style={{ margin: 0 }}>Admin Panel</h2>
-                    <div style={{ fontSize: 13, opacity: 0.75 }}>
+        <div style={{ padding: 20, fontFamily: "sans-serif" }}>
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 20,
+                }}
+            >
+                <h1>Admin Panel</h1>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span>
                         {user?.email || "admin"} · {user?.role || "ADMIN"}
-                    </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={loadAll} disabled={loading}>Yenile</button>
+                    </span>
+                    <button onClick={loadAll}>Yenile</button>
                     <button onClick={onLogout}>Çıkış</button>
                 </div>
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <button onClick={() => setTab("teachers")} style={{ fontWeight: tab === "teachers" ? "700" : "400" }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+                <button
+                    onClick={() => setTab("teachers")}
+                    style={{ fontWeight: tab === "teachers" ? "700" : "400" }}
+                >
                     Öğretmenler
                 </button>
-                <button onClick={() => setTab("students")} style={{ fontWeight: tab === "students" ? "700" : "400" }}>
+                <button
+                    onClick={() => setTab("students")}
+                    style={{ fontWeight: tab === "students" ? "700" : "400" }}
+                >
                     Öğrenciler
                 </button>
-                <button onClick={() => setTab("link")} style={{ fontWeight: tab === "link" ? "700" : "400" }}>
+                <button
+                    onClick={() => setTab("link")}
+                    style={{ fontWeight: tab === "link" ? "700" : "400" }}
+                >
                     Öğretmen-Öğrenci Eşleştir
                 </button>
-                <button onClick={() => setTab("lessons")} style={{ fontWeight: tab === "lessons" ? "700" : "400" }}>
+                <button
+                    onClick={() => setTab("lessons")}
+                    style={{ fontWeight: tab === "lessons" ? "700" : "400" }}
+                >
                     Ders Planları
                 </button>
-                <button onClick={() => setTab("packages")} style={{ fontWeight: tab === "packages" ? "700" : "400" }}>
+                <button
+                    onClick={() => setTab("packages")}
+                    style={{ fontWeight: tab === "packages" ? "700" : "400" }}
+                >
                     Paketler
                 </button>
-                <button onClick={() => setTab("deleted")} style={{ fontWeight: tab === "deleted" ? "700" : "400" }}>
+                <button
+                    onClick={() => setTab("deleted")}
+                    style={{ fontWeight: tab === "deleted" ? "700" : "400" }}
+                >
                     Silinenler
                 </button>
             </div>
 
             {err ? (
-                <div style={{ marginTop: 12, color: "crimson" }}>{err}</div>
+                <div style={{ background: "#fee", padding: 10, marginBottom: 10, borderRadius: 4 }}>
+                    {err}
+                </div>
             ) : null}
 
             {loading ? (
-                <div style={{ marginTop: 12 }}>Yükleniyor…</div>
+                <div style={{ padding: 20, textAlign: "center" }}>Yükleniyor…</div>
             ) : null}
 
             {/* TEACHERS TAB */}
             {tab === "teachers" && !loading && (
-                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 16 }}>
+                <div>
                     {/* Teacher List */}
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Öğretmenler ({teachers.length})</h3>
+                    <h2>Öğretmenler ({teachers.length})</h2>
+                    {teachers.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>Öğretmen yok.</div>
+                    ) : null}
 
-                        {teachers.length === 0 ? <div>Öğretmen yok.</div> : null}
-
-                        <div style={{ display: "grid", gap: 8 }}>
-                            {teachers.map((t) => {
-                                const tid = t.id ?? t.user_id;
-                                const isOpen = expandedTeacherId === tid;
-                                const linked = studentsOfTeacher(t);
-
-                                return (
-                                    <div key={tid} style={{ border: "1px solid #f0f0f0", borderRadius: 10, padding: 10 }}>
-                                        <div
-                                            style={{ display: "flex", justifyContent: "space-between", cursor: "pointer" }}
-                                            onClick={() => setExpandedTeacherId(isOpen ? null : tid)}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {teachers.map((t) => {
+                            const tid = t.id ?? t.user_id;
+                            const isOpen = expandedTeacherId === tid;
+                            const linked = studentsOfTeacher(t);
+                            return (
+                                <div
+                                    key={tid}
+                                    style={{
+                                        border: "1px solid #ccc",
+                                        borderRadius: 4,
+                                        padding: 10,
+                                        background: "#fff",
+                                    }}
+                                >
+                                    <div
+                                        onClick={() => setExpandedTeacherId(isOpen ? null : tid)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        <div style={{ fontWeight: 700 }}>
+                                            {t.full_name || t.name || "İsimsiz öğretmen"}
+                                        </div>
+                                        <div>{t.email || ""}</div>
+                                        <div>📞 {t.phones || "-"}</div>
+                                        <div>
+                                            💰 Ücret/Ders: {t.teacher_rate ?? "-"}₺
+                                        </div>
+                                        <div>👥 {linked.length} öğrenci</div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeleteTeacher(tid, t.full_name || t.name);
+                                            }}
+                                            style={{ fontSize: 12 }}
                                         >
-                                            <div>
-                                                <div style={{ fontWeight: 700 }}>
-                                                    {t.full_name || t.name || "İsimsiz öğretmen"}
-                                                </div>
-                                                <div style={{ fontSize: 13, opacity: 0.75 }}>
-                                                    {t.email || ""}
-                                                </div>
-                                                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                                    {t.phones || "-"}
-                                                </div>
-                                                <div style={{ fontSize: 13, opacity: 0.75 }}>
-                                                    Ücret/Ders: {t.teacher_rate ?? "-"}
-                                                </div>
-                                            </div>
-                                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                                <div style={{ fontSize: 13, opacity: 0.8 }}>
-                                                    {linked.length} öğrenci
-                                                </div>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onDeleteTeacher(tid, t.full_name || t.name);
-                                                    }}
-                                                    style={{ fontSize: 12 }}
-                                                >
-                                                    Sil
+                                            Sil
+                                        </button>
+                                    </div>
+
+                                    {isOpen && (
+                                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #eee" }}>
+                                            <h4>Bağlı Öğrenciler</h4>
+                                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                                                <input
+                                                    type="number"
+                                                    placeholder="Ücret/Ders"
+                                                    value={teacherRateEdits[tid] ?? ""}
+                                                    onChange={(e) =>
+                                                        setTeacherRateEdits((prev) => ({
+                                                            ...prev,
+                                                            [tid]: e.target.value,
+                                                        }))
+                                                    }
+                                                    style={{ width: 140 }}
+                                                />
+                                                <button onClick={() => onUpdateTeacherRate(tid)}>
+                                                    Ücreti Güncelle
                                                 </button>
                                             </div>
-                                        </div>
 
-                                        {isOpen && (
-                                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #eee" }}>
-                                                <div style={{ fontWeight: 600, marginBottom: 6 }}>Bağlı Öğrenciler</div>
-                                                <div style={{ marginBottom: 8, display: "flex", gap: 8 }}>
-                                                    <input
-                                                        placeholder="Ücret/Ders"
-                                                        value={teacherRateEdits[tid] ?? t.teacher_rate ?? ""}
-                                                        onChange={(e) =>
-                                                            setTeacherRateEdits((prev) => ({ ...prev, [tid]: e.target.value }))
-                                                        }
-                                                        style={{ width: 140 }}
-                                                    />
-                                                    <button onClick={() => onUpdateTeacherRate(tid)}>
-                                                        Ücreti Güncelle
-                                                    </button>
+                                            {linked.length === 0 ? (
+                                                <div style={{ padding: 10, background: "#f9f9f9" }}>
+                                                    Henüz bağlı öğrenci yok.
                                                 </div>
-                                                {linked.length === 0 ? (
-                                                    <div style={{ fontSize: 13, opacity: 0.75 }}>Henüz bağlı öğrenci yok.</div>
-                                                ) : (
-                                                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                                                        {linked.map((s) => (
-                                                            <li key={s.id}>
-                                                                {s.full_name}{" "}
-                                                                <span style={{ fontSize: 12, opacity: 0.7 }}>
-                                                                    (Sınıf: {s.grade ?? "-"})
-                                                                </span>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                            ) : (
+                                                <ul>
+                                                    {linked.map((s) => (
+                                                        <li key={s.id}>
+                                                            {s.full_name}{" "}
+                                                            (Sınıf: {s.grade ?? "-"})
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
                     {/* Create Teacher */}
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Öğretmen Oluştur</h3>
-                        <form onSubmit={onCreateTeacher} style={{ display: "grid", gap: 10 }}>
-                            <input
-                                placeholder="Ad Soyad"
-                                value={newTeacherName}
-                                onChange={(e) => setNewTeacherName(e.target.value)}
-                            />
-                            <input
-                                placeholder="Email"
-                                value={newTeacherEmail}
-                                onChange={(e) => setNewTeacherEmail(e.target.value)}
-                            />
-                            <input
-                                placeholder="Telefonlar (virgül ile)"
-                                value={newTeacherPhones}
-                                onChange={(e) => setNewTeacherPhones(e.target.value)}
-                            />
-                            <input
-                                placeholder="Şifre"
-                                type="password"
-                                value={newTeacherPassword}
-                                onChange={(e) => setNewTeacherPassword(e.target.value)}
-                            />
-                            <button>Oluştur</button>
-                            <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                Not: Backend öğretmeni “User” olarak oluşturuyorsa bu endpoint onu yapmalı.
-                            </div>
-                        </form>
-                    </div>
+                    <h3 style={{ marginTop: 30 }}>Öğretmen Oluştur</h3>
+                    <form onSubmit={onCreateTeacher} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                        <input
+                            type="text"
+                            placeholder="Ad Soyad"
+                            required
+                            value={newTeacherName}
+                            onChange={(e) => setNewTeacherName(e.target.value)}
+                        />
+                        <input
+                            type="email"
+                            placeholder="Email"
+                            required
+                            value={newTeacherEmail}
+                            onChange={(e) => setNewTeacherEmail(e.target.value)}
+                        />
+                        <input
+                            type="text"
+                            placeholder="Telefonlar (opsiyonel)"
+                            value={newTeacherPhones}
+                            onChange={(e) => setNewTeacherPhones(e.target.value)}
+                        />
+                        <input
+                            type="password"
+                            placeholder="Şifre"
+                            required
+                            value={newTeacherPassword}
+                            onChange={(e) => setNewTeacherPassword(e.target.value)}
+                        />
+                        <button type="submit">Oluştur</button>
+                    </form>
+                    <p style={{ fontSize: 12, color: "#666" }}>
+                        Not: Backend öğretmeni "User" olarak oluşturuyorsa bu endpoint onu yapmalı.
+                    </p>
                 </div>
             )}
 
             {/* STUDENTS TAB */}
             {tab === "students" && !loading && (
-                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 16 }}>
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Öğrenciler ({students.length})</h3>
-
-                        {students.length === 0 ? <div>Öğrenci yok.</div> : null}
-
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <div>
+                    <h2>Öğrenciler ({students.length})</h2>
+                    {students.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>Öğrenci yok.</div>
+                    ) : (
+                        <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse", border: "1px solid #ccc" }}>
                             <thead>
-                                <tr style={{ textAlign: "left" }}>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Sınıf</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Telefonlar</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Paket</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Kalan</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>ID</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
+                                <tr style={{ background: "#f5f5f5" }}>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>Ad Soyad</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>Sınıf</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>Telefonlar</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>Paket</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>Kalan</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}>ID</th>
+                                    <th style={{ border: "1px solid #ccc", padding: 8 }}></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {students.map((s) => {
-                                    const sp = studentPackages.find((p) => p.student_id === s.id && p.status === "ACTIVE") ||
-                                        studentPackages.find((p) => p.student_id === s.id);
+                                    const sp =
+                                        studentPackages.find(
+                                            (p) => p.student_id === s.id && p.status === "ACTIVE"
+                                        ) || studentPackages.find((p) => p.student_id === s.id);
                                     const pk = packages.find((p) => p.id === sp?.package_id);
                                     return (
-                                    <tr key={s.id}>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {s.full_name}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {s.grade ?? "-"}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {s.phones || "-"}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {pk?.name || "-"}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {sp ? sp.remaining_lessons : "-"}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            {s.id}
-                                        </td>
-                                        <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                            <button onClick={() => onDeleteStudent(s.id, s.full_name)} style={{ fontSize: 12 }}>
-                                                Sil
-                                            </button>
-                                        </td>
-                                    </tr>
+                                        <tr key={s.id}>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{s.full_name}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{s.grade ?? "-"}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{s.phones || "-"}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{pk?.name || "-"}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{sp ? sp.remaining_lessons : "-"}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>{s.id}</td>
+                                            <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                                                <button
+                                                    onClick={() => onDeleteStudent(s.id, s.full_name)}
+                                                    style={{ fontSize: 12 }}
+                                                >
+                                                    Sil
+                                                </button>
+                                            </td>
+                                        </tr>
                                     );
                                 })}
                             </tbody>
                         </table>
-                    </div>
+                    )}
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Öğrenci Oluştur</h3>
-                        <form onSubmit={onCreateStudent} style={{ display: "grid", gap: 10 }}>
-                            <input
-                                placeholder="Ad Soyad"
-                                value={newStudentName}
-                                onChange={(e) => setNewStudentName(e.target.value)}
-                            />
-                            <input
-                                placeholder="Sınıf (ör: 8)"
-                                value={newStudentGrade}
-                                onChange={(e) => setNewStudentGrade(e.target.value)}
-                            />
-                            <input
-                                placeholder="Email"
-                                value={newStudentEmail}
-                                onChange={(e) => setNewStudentEmail(e.target.value)}
-                            />
-                            <input
-                                placeholder="Telefonlar (virgül ile)"
-                                value={newStudentPhones}
-                                onChange={(e) => setNewStudentPhones(e.target.value)}
-                            />
-                            <input
-                                placeholder="Şifre"
-                                type="password"
-                                value={newStudentPassword}
-                                onChange={(e) => setNewStudentPassword(e.target.value)}
-                            />
-                            <button>Oluştur</button>
-                            <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                Not: Bu işlem öğrenci için login hesabını da oluşturur.
-                            </div>
-                        </form>
-                    </div>
+                    <h3 style={{ marginTop: 30 }}>Öğrenci Oluştur</h3>
+                    <form onSubmit={onCreateStudent} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                        <input
+                            type="text"
+                            placeholder="Ad Soyad"
+                            required
+                            value={newStudentName}
+                            onChange={(e) => setNewStudentName(e.target.value)}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Sınıf (opsiyonel)"
+                            value={newStudentGrade}
+                            onChange={(e) => setNewStudentGrade(e.target.value)}
+                        />
+                        <input
+                            type="email"
+                            placeholder="Email"
+                            required
+                            value={newStudentEmail}
+                            onChange={(e) => setNewStudentEmail(e.target.value)}
+                        />
+                        <input
+                            type="text"
+                            placeholder="Telefonlar (opsiyonel)"
+                            value={newStudentPhones}
+                            onChange={(e) => setNewStudentPhones(e.target.value)}
+                        />
+                        <input
+                            type="password"
+                            placeholder="Şifre"
+                            required
+                            value={newStudentPassword}
+                            onChange={(e) => setNewStudentPassword(e.target.value)}
+                        />
+                        <button type="submit">Oluştur</button>
+                    </form>
+                    <p style={{ fontSize: 12, color: "#666" }}>
+                        Not: Bu işlem öğrenci için login hesabını da oluşturur.
+                    </p>
                 </div>
             )}
 
             {/* LINK TAB */}
             {tab === "link" && !loading && (
-                <div style={{ marginTop: 16, border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Öğretmen-Öğrenci Eşleştir</h3>
-
-                    <form onSubmit={onCreateLink} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "center" }}>
-                        <select value={linkTeacherId} onChange={(e) => setLinkTeacherId(e.target.value)}>
+                <div>
+                    <h2>Öğretmen-Öğrenci Eşleştir</h2>
+                    <form onSubmit={onCreateLink} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                        <select
+                            required
+                            value={linkTeacherId}
+                            onChange={(e) => setLinkTeacherId(e.target.value)}
+                        >
                             <option value="">Öğretmen seç</option>
                             {teachers.map((t) => {
                                 const tid = t.id ?? t.user_id;
@@ -580,8 +626,11 @@ export default function AdminPage() {
                                 );
                             })}
                         </select>
-
-                        <select value={linkStudentId} onChange={(e) => setLinkStudentId(e.target.value)}>
+                        <select
+                            required
+                            value={linkStudentId}
+                            onChange={(e) => setLinkStudentId(e.target.value)}
+                        >
                             <option value="">Öğrenci seç</option>
                             {students.map((s) => (
                                 <option key={s.id} value={s.id}>
@@ -589,22 +638,23 @@ export default function AdminPage() {
                                 </option>
                             ))}
                         </select>
-
-                        <button disabled={!linkTeacherId || !linkStudentId}>Eşleştir</button>
+                        <button type="submit">Eşleştir</button>
                     </form>
-
-                    <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-                        Bu işlem backend’de `POST /api/enrollments` ile teacher_user_id + student_id gönderir.
-                    </div>
+                    <p style={{ fontSize: 12, color: "#666" }}>
+                        Bu işlem backend'de `POST /api/enrollments` ile teacher_user_id + student_id gönderir.
+                    </p>
                 </div>
             )}
 
             {/* LESSONS TAB */}
             {tab === "lessons" && !loading && (
-                <div style={{ marginTop: 16, border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Ders Planları ({lessons.length})</h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                        <select value={lessonFilterTeacher} onChange={(e) => setLessonFilterTeacher(e.target.value)}>
+                <div>
+                    <h2>Ders Planları ({lessons.length})</h2>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                        <select
+                            value={lessonFilterTeacher}
+                            onChange={(e) => setLessonFilterTeacher(e.target.value)}
+                        >
                             <option value="">Tüm öğretmenler</option>
                             {teachers.map((t) => {
                                 const tid = t.id ?? t.user_id;
@@ -615,7 +665,10 @@ export default function AdminPage() {
                                 );
                             })}
                         </select>
-                        <select value={lessonFilterStudent} onChange={(e) => setLessonFilterStudent(e.target.value)}>
+                        <select
+                            value={lessonFilterStudent}
+                            onChange={(e) => setLessonFilterStudent(e.target.value)}
+                        >
                             <option value="">Tüm öğrenciler</option>
                             {students.map((s) => (
                                 <option key={s.id} value={s.id}>
@@ -635,7 +688,10 @@ export default function AdminPage() {
                             onChange={(e) => setLessonFilterTo(e.target.value)}
                             placeholder="Bitiş"
                         />
-                        <select value={lessonFilterStatus} onChange={(e) => setLessonFilterStatus(e.target.value)}>
+                        <select
+                            value={lessonFilterStatus}
+                            onChange={(e) => setLessonFilterStatus(e.target.value)}
+                        >
                             <option value="">Tüm durumlar</option>
                             <option value="PLANNED">PLANNED</option>
                             <option value="PENDING_CONFIRMATION">PENDING_CONFIRMATION</option>
@@ -644,33 +700,46 @@ export default function AdminPage() {
                             <option value="MISSED">MISSED</option>
                         </select>
                     </div>
+
                     {lessons.length === 0 ? (
-                        <div>Henüz ders planı yok.</div>
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>
+                            Henüz ders planı yok.
+                        </div>
                     ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                             <thead>
-                                <tr style={{ textAlign: "left" }}>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Tarih</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrenci</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Mod</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrt. Notu</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrt. Onay</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğr. Onay</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>İptal Eden</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
+                                <tr>
+                                    <th>Tarih</th>
+                                    <th>Öğretmen</th>
+                                    <th>Öğrenci</th>
+                                    <th>Süre</th>
+                                    <th>Mod</th>
+                                    <th>Durum</th>
+                                    <th>Öğrt. Notu</th>
+                                    <th>Öğrt. Onay</th>
+                                    <th>Öğr. Onay</th>
+                                    <th>İptal Eden</th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {lessons
                                     .filter((l) => {
-                                        if (lessonFilterTeacher && String(l.teacher_user_id) !== String(lessonFilterTeacher)) return false;
-                                        if (lessonFilterStudent && String(l.student_id) !== String(lessonFilterStudent)) return false;
-                                        if (lessonFilterStatus && l.status !== lessonFilterStatus) return false;
+                                        if (
+                                            lessonFilterTeacher &&
+                                            String(l.teacher_user_id) !== String(lessonFilterTeacher)
+                                        )
+                                            return false;
+                                        if (
+                                            lessonFilterStudent &&
+                                            String(l.student_id) !== String(lessonFilterStudent)
+                                        )
+                                            return false;
+                                        if (lessonFilterStatus && l.status !== lessonFilterStatus)
+                                            return false;
                                         const d = l.scheduled_start ? new Date(l.scheduled_start) : null;
-                                        if (lessonFilterFrom && d && d < new Date(lessonFilterFrom)) return false;
+                                        if (lessonFilterFrom && d && d < new Date(lessonFilterFrom))
+                                            return false;
                                         if (lessonFilterTo && d) {
                                             const to = new Date(lessonFilterTo);
                                             to.setHours(23, 59, 59, 999);
@@ -679,64 +748,168 @@ export default function AdminPage() {
                                         return true;
                                     })
                                     .map((l) => {
-                                    const teacher = teachers.find((t) => (t.id ?? t.user_id) === l.teacher_user_id);
-                                    const student = students.find((s) => s.id === l.student_id);
-                                    const statusColor = {
-                                        PLANNED: "#2563eb",
-                                        PENDING_CONFIRMATION: "#b45309",
-                                        COMPLETED: "#15803d",
-                                        CANCELLED: "#b91c1c",
-                                        MISSED: "#6b7280",
-                                    }[l.status] || "#111827";
-                                    return (
-                                        <tr key={l.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {teacher?.full_name || `#${l.teacher_user_id}`}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {student?.full_name || `#${l.student_id}`}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.duration_min} dk
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.mode}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                <span style={{
-                                                    display: "inline-block",
-                                                    padding: "2px 8px",
-                                                    borderRadius: 999,
-                                                    background: statusColor + "22",
-                                                    color: statusColor,
-                                                    fontSize: 12,
-                                                    fontWeight: 600,
-                                                }}>
+                                        const teacher = teachers.find(
+                                            (t) => (t.id ?? t.user_id) === l.teacher_user_id
+                                        );
+                                        const student = students.find((s) => s.id === l.student_id);
+                                        const statusColor =
+                                            {
+                                                PLANNED: "#2563eb",
+                                                PENDING_CONFIRMATION: "#b45309",
+                                                COMPLETED: "#15803d",
+                                                CANCELLED: "#b91c1c",
+                                                MISSED: "#6b7280",
+                                            }[l.status] || "#111827";
+                                        return (
+                                            <tr key={l.id}>
+                                                <td>
+                                                    {l.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
+                                                </td>
+                                                <td>{teacher?.full_name || `#${l.teacher_user_id}`}</td>
+                                                <td>{student?.full_name || `#${l.student_id}`}</td>
+                                                <td>{l.duration_min} dk</td>
+                                                <td>{l.mode}</td>
+                                                <td style={{ color: statusColor, fontWeight: 600 }}>
                                                     {l.status}
-                                                </span>
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.teacher_mark_note || "-"}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.teacher_marked_at ? "Evet" : "-"}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.student_marked_at ? "Evet" : "-"}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                {l.cancelled_by_role ? `${l.cancelled_by_role}` : "-"}
-                                            </td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8, display: "flex", gap: 6 }}>
-                                                <button onClick={() => onCancelLesson(l.id)} disabled={l.status === "CANCELLED"}>
-                                                    İptal
-                                                </button>
-                                                <button onClick={() => onDeleteLesson(l.id)}>
-                                                    Sil
-                                                </button>
+                                                </td>
+                                                <td>{l.teacher_mark_note || "-"}</td>
+                                                <td>{l.teacher_marked_at ? "Evet" : "-"}</td>
+                                                <td>{l.student_marked_at ? "Evet" : "-"}</td>
+                                                <td>
+                                                    {l.cancelled_by_role
+                                                        ? `${l.cancelled_by_role}`
+                                                        : "-"}
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        onClick={() => onCancelLesson(l.id)}
+                                                        disabled={l.status === "CANCELLED"}
+                                                    >
+                                                        İptal
+                                                    </button>
+                                                    <button onClick={() => onDeleteLesson(l.id)}>Sil</button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                            </tbody>
+                        </table>
+                    )}
+
+                    {/* Teacher Earnings */}
+                    <h3 style={{ marginTop: 30 }}>Öğretmen Kazanç (Bu Ay)</h3>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                        <thead>
+                            <tr>
+                                <th>Öğretmen</th>
+                                <th>Ders</th>
+                                <th>Ücret/Ders</th>
+                                <th>Toplam</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(() => {
+                                const now = new Date();
+                                const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                                const counts = new Map();
+                                lessons.forEach((l) => {
+                                    const d = l.scheduled_start ? new Date(l.scheduled_start) : null;
+                                    if (!d || d < start) return;
+                                    if (l.status !== "COMPLETED") return;
+                                    counts.set(
+                                        l.teacher_user_id,
+                                        (counts.get(l.teacher_user_id) || 0) + 1
+                                    );
+                                });
+                                return teachers.map((t) => {
+                                    const tid = t.id ?? t.user_id;
+                                    const count = counts.get(tid) || 0;
+                                    const rate = Number(t.teacher_rate || 0);
+                                    const total = rate * count;
+                                    return (
+                                        <tr key={tid}>
+                                            <td>{t.full_name}</td>
+                                            <td>{count}</td>
+                                            <td>{rate || "-"}₺</td>
+                                            <td>{total || "-"}₺</td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* PACKAGES TAB */}
+            {tab === "packages" && !loading && (
+                <div>
+                    <h2>Paketler ({packages.length})</h2>
+                    {packages.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>Paket yok.</div>
+                    ) : (
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th>Ad</th>
+                                    <th>Ders</th>
+                                    <th>Fiyat</th>
+                                    <th>Süre (gün)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {packages.map((p) => (
+                                    <tr key={p.id}>
+                                        <td>{p.name}</td>
+                                        <td>{p.lesson_count}</td>
+                                        <td>{p.price ?? "-"}₺</td>
+                                        <td>{p.expires_in_days ?? "-"}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+
+                    <h3 style={{ marginTop: 20 }}>Öğrenci Paketleri</h3>
+                    {studentPackages.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>
+                            Öğrenci paketi yok.
+                        </div>
+                    ) : (
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th>Öğrenci</th>
+                                    <th>Paket</th>
+                                    <th>Kalan</th>
+                                    <th>Durum</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {studentPackages.map((sp) => {
+                                    const st = students.find((s) => s.id === sp.student_id);
+                                    const pk = packages.find((p) => p.id === sp.package_id);
+                                    const canRenew = sp.remaining_lessons <= 1;
+                                    return (
+                                        <tr key={sp.id}>
+                                            <td>{st?.full_name || sp.student_id}</td>
+                                            <td>{pk?.name || sp.package_id}</td>
+                                            <td>{sp.remaining_lessons}</td>
+                                            <td>{sp.status}</td>
+                                            <td>
+                                                {canRenew ? (
+                                                    <button
+                                                        onClick={() => {
+                                                            setAssignStudentId(String(sp.student_id));
+                                                            setTab("packages");
+                                                        }}
+                                                    >
+                                                        Yenile
+                                                    </button>
+                                                ) : (
+                                                    "-"
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -745,234 +918,142 @@ export default function AdminPage() {
                         </table>
                     )}
 
-                    {/* Teacher Earnings */}
-                    <div style={{ marginTop: 16 }}>
-                        <h4 style={{ marginTop: 0 }}>Öğretmen Kazanç (Bu Ay)</h4>
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                            <thead>
-                                <tr style={{ textAlign: "left" }}>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğretmen</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ders</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ücret/Ders</th>
-                                    <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Toplam</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {(() => {
-                                    const now = new Date();
-                                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-                                    const counts = new Map();
-                                    lessons.forEach((l) => {
-                                        const d = l.scheduled_start ? new Date(l.scheduled_start) : null;
-                                        if (!d || d < start) return;
-                                        if (l.status !== "COMPLETED") return;
-                                        counts.set(l.teacher_user_id, (counts.get(l.teacher_user_id) || 0) + 1);
-                                    });
-                                    return teachers.map((t) => {
-                                        const tid = t.id ?? t.user_id;
-                                        const count = counts.get(tid) || 0;
-                                        const rate = Number(t.teacher_rate || 0);
-                                        const total = rate * count;
-                                        return (
-                                            <tr key={tid}>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{t.full_name}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{count}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{rate || "-"}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{total || "-"}</td>
-                                            </tr>
-                                        );
-                                    });
-                                })()}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+                    <h3 style={{ marginTop: 30 }}>Paket Oluştur</h3>
+                    <form onSubmit={onCreatePackage} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                        <input
+                            type="text"
+                            placeholder="Paket adı"
+                            required
+                            value={newPackageName}
+                            onChange={(e) => setNewPackageName(e.target.value)}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Ders sayısı"
+                            required
+                            value={newPackageCount}
+                            onChange={(e) => setNewPackageCount(e.target.value)}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Fiyat (opsiyonel)"
+                            value={newPackagePrice}
+                            onChange={(e) => setNewPackagePrice(e.target.value)}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Geçerlilik süresi (gün, opsiyonel)"
+                            value={newPackageExpire}
+                            onChange={(e) => setNewPackageExpire(e.target.value)}
+                        />
+                        <button type="submit">Paket Oluştur</button>
+                    </form>
 
-            {/* PACKAGES TAB */}
-            {tab === "packages" && !loading && (
-                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 16 }}>
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Paketler ({packages.length})</h3>
-                        {packages.length === 0 ? (
-                            <div>Paket yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ders</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Fiyat</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Süre (gün)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {packages.map((p) => (
-                                        <tr key={p.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.name}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.lesson_count}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.price ?? "-"}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{p.expires_in_days ?? "-"}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-
-                        <h4 style={{ marginTop: 16 }}>Öğrenci Paketleri</h4>
-                        {studentPackages.length === 0 ? (
-                            <div>Öğrenci paketi yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Öğrenci</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Paket</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Kalan</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Durum</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {studentPackages.map((sp) => {
-                                        const st = students.find((s) => s.id === sp.student_id);
-                                        const pk = packages.find((p) => p.id === sp.package_id);
-                                        const canRenew = sp.remaining_lessons <= 1;
-                                        return (
-                                            <tr key={sp.id}>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{st?.full_name || sp.student_id}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{pk?.name || sp.package_id}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{sp.remaining_lessons}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{sp.status}</td>
-                                                <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>
-                                                    {canRenew ? (
-                                                        <button
-                                                            onClick={() => {
-                                                                setAssignStudentId(String(sp.student_id));
-                                                                setTab("packages");
-                                                            }}
-                                                        >
-                                                            Yenile
-                                                        </button>
-                                                    ) : (
-                                                        "-"
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Paket Oluştur</h3>
-                        <form onSubmit={onCreatePackage} style={{ display: "grid", gap: 10 }}>
-                            <input placeholder="Paket adı" value={newPackageName} onChange={(e) => setNewPackageName(e.target.value)} />
-                            <input placeholder="Ders sayısı" value={newPackageCount} onChange={(e) => setNewPackageCount(e.target.value)} />
-                            <input placeholder="Fiyat (opsiyonel)" value={newPackagePrice} onChange={(e) => setNewPackagePrice(e.target.value)} />
-                            <input placeholder="Geçerlilik (gün)" value={newPackageExpire} onChange={(e) => setNewPackageExpire(e.target.value)} />
-                            <button>Paket Oluştur</button>
-                        </form>
-
-                        <h3 style={{ marginTop: 16 }}>Paket Ata</h3>
-                        <form onSubmit={onAssignPackage} style={{ display: "grid", gap: 10 }}>
-                            <select value={assignStudentId} onChange={(e) => setAssignStudentId(e.target.value)}>
-                                <option value="">Öğrenci seç</option>
-                                {students.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                        {s.full_name}
-                                    </option>
-                                ))}
-                            </select>
-                            <select value={assignPackageId} onChange={(e) => setAssignPackageId(e.target.value)}>
-                                <option value="">Paket seç</option>
-                                {packages.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name} ({p.lesson_count})
-                                    </option>
-                                ))}
-                            </select>
-                            {assignStudentId && (() => {
+                    <h3 style={{ marginTop: 30 }}>Paket Ata</h3>
+                    <form onSubmit={onAssignPackage} style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                        <select
+                            required
+                            value={assignStudentId}
+                            onChange={(e) => setAssignStudentId(e.target.value)}
+                        >
+                            <option value="">Öğrenci seç</option>
+                            {students.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                    {s.full_name}
+                                </option>
+                            ))}
+                        </select>
+                        <select
+                            required
+                            value={assignPackageId}
+                            onChange={(e) => setAssignPackageId(e.target.value)}
+                        >
+                            <option value="">Paket seç</option>
+                            {packages.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                    {p.name} ({p.lesson_count})
+                                </option>
+                            ))}
+                        </select>
+                        {assignStudentId &&
+                            (() => {
                                 const activeSp = studentPackages.find(
-                                    (sp) => sp.student_id === Number(assignStudentId) && sp.status === "ACTIVE"
+                                    (sp) =>
+                                        sp.student_id === Number(assignStudentId) &&
+                                        sp.status === "ACTIVE"
                                 );
                                 return activeSp && activeSp.remaining_lessons > 1;
                             })() ? (
-                                <div style={{ fontSize: 12, color: "#b45309" }}>
-                                    Kalan ders 1’den büyük. Yenileme yapılamaz.
-                                </div>
-                            ) : null}
-                            <button
-                                disabled={
-                                    !assignStudentId ||
-                                    !assignPackageId ||
-                                    (() => {
-                                        const activeSp = studentPackages.find(
-                                            (sp) => sp.student_id === Number(assignStudentId) && sp.status === "ACTIVE"
-                                        );
-                                        return activeSp && activeSp.remaining_lessons > 1;
-                                    })()
-                                }
-                            >
-                                Ata
-                            </button>
-                        </form>
-                    </div>
+                            <div style={{ background: "#fef3c7", padding: 10, borderRadius: 4 }}>
+                                ⚠️ Kalan ders 1'den büyük. Yenileme yapılamaz.
+                            </div>
+                        ) : null}
+                        <button
+                            type="submit"
+                            disabled={
+                                assignStudentId &&
+                                (() => {
+                                    const activeSp = studentPackages.find(
+                                        (sp) =>
+                                            sp.student_id === Number(assignStudentId) &&
+                                            sp.status === "ACTIVE"
+                                    );
+                                    return activeSp && activeSp.remaining_lessons > 1;
+                                })()
+                            }
+                        >
+                            Ata
+                        </button>
+                    </form>
                 </div>
             )}
 
             {/* DELETED TAB */}
             {tab === "deleted" && !loading && (
-                <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Silinen Öğretmenler ({deletedTeachers.length})</h3>
-                        {deletedTeachers.length === 0 ? (
-                            <div>Kayıt yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Email</th>
+                <div>
+                    <h2>Silinen Öğretmenler ({deletedTeachers.length})</h2>
+                    {deletedTeachers.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>Kayıt yok.</div>
+                    ) : (
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th>Ad Soyad</th>
+                                    <th>Email</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {deletedTeachers.map((t) => (
+                                    <tr key={t.id}>
+                                        <td>{t.full_name}</td>
+                                        <td>{t.email}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    {deletedTeachers.map((t) => (
-                                        <tr key={t.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{t.full_name}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{t.email}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
 
-                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                        <h3 style={{ marginTop: 0 }}>Silinen Öğrenciler ({deletedStudents.length})</h3>
-                        {deletedStudents.length === 0 ? (
-                            <div>Kayıt yok.</div>
-                        ) : (
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ textAlign: "left" }}>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Ad Soyad</th>
-                                        <th style={{ borderBottom: "1px solid #eee", padding: 8 }}>Email</th>
+                    <h2 style={{ marginTop: 30 }}>Silinen Öğrenciler ({deletedStudents.length})</h2>
+                    {deletedStudents.length === 0 ? (
+                        <div style={{ padding: 20, background: "#f9f9f9" }}>Kayıt yok.</div>
+                    ) : (
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                            <thead>
+                                <tr>
+                                    <th>Ad Soyad</th>
+                                    <th>Email</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {deletedStudents.map((s) => (
+                                    <tr key={s.id}>
+                                        <td>{s.full_name}</td>
+                                        <td>{s.email || "-"}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    {deletedStudents.map((s) => (
-                                        <tr key={s.id}>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{s.full_name}</td>
-                                            <td style={{ borderBottom: "1px solid #f5f5f5", padding: 8 }}>{s.email || "-"}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
             )}
         </div>
