@@ -22,11 +22,6 @@ import { apiFetch } from "../api/client";
 import { loadAuth, logout } from "../auth/authStore";
 import { useNavigate } from "react-router-dom";
 
-function normalizeId(x) {
-    // backend bazen id, bazen user_id döndürebilir
-    return x?.id ?? x?.user_id ?? x?.teacher_user_id ?? x?.student_id ?? null;
-}
-
 export default function AdminPage() {
     const nav = useNavigate();
     const { user } = loadAuth();
@@ -44,6 +39,18 @@ export default function AdminPage() {
     const [packages, setPackages] = useState([]);
     const [studentPackages, setStudentPackages] = useState([]);
 
+    function normalizeId(x) {
+        return x?.id ?? x?.user_id ?? x?.teacher_user_id ?? x?.student_id ?? null;
+    }
+
+
+    const teacherById = new Map(
+        teachers.map((t) => [String(t.user_id ?? t.id), t.full_name || t.name || t.email || null])
+    );
+
+    const studentById = new Map(
+        students.map((s) => [String(s.id), s.full_name || s.name || s.email || null])
+    );
     const [lessonFilterTeacher, setLessonFilterTeacher] = useState("");
     const [lessonFilterStudent, setLessonFilterStudent] = useState("");
     const [lessonFilterFrom, setLessonFilterFrom] = useState("");
@@ -315,6 +322,7 @@ export default function AdminPage() {
         logout();
         nav("/login");
     }
+
 
     return (
         <div style={{ padding: 20, fontFamily: "sans-serif" }}>
@@ -618,7 +626,7 @@ export default function AdminPage() {
                         >
                             <option value="">Öğretmen seç</option>
                             {teachers.map((t) => {
-                                const tid = t.id ?? t.user_id;
+                                const tid = t.user_id ?? t.id;
                                 return (
                                     <option key={tid} value={tid}>
                                         {t.full_name || t.name} ({t.email || tid})
@@ -645,6 +653,9 @@ export default function AdminPage() {
                     </p>
                 </div>
             )}
+
+
+
 
             {/* LESSONS TAB */}
             {tab === "lessons" && !loading && (
@@ -706,94 +717,74 @@ export default function AdminPage() {
                             Henüz ders planı yok.
                         </div>
                     ) : (
-                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                            <thead>
-                                <tr>
-                                    <th>Tarih</th>
-                                    <th>Öğretmen</th>
-                                    <th>Öğrenci</th>
-                                    <th>Süre</th>
-                                    <th>Mod</th>
-                                    <th>Durum</th>
-                                    <th>Öğrt. Notu</th>
-                                    <th>Öğrt. Onay</th>
-                                    <th>Öğr. Onay</th>
-                                    <th>İptal Eden</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lessons
-                                    .filter((l) => {
-                                        if (
-                                            lessonFilterTeacher &&
-                                            String(l.teacher_user_id) !== String(lessonFilterTeacher)
-                                        )
-                                            return false;
-                                        if (
-                                            lessonFilterStudent &&
-                                            String(l.student_id) !== String(lessonFilterStudent)
-                                        )
-                                            return false;
-                                        if (lessonFilterStatus && l.status !== lessonFilterStatus)
-                                            return false;
-                                        const d = l.scheduled_start ? new Date(l.scheduled_start) : null;
-                                        if (lessonFilterFrom && d && d < new Date(lessonFilterFrom))
-                                            return false;
-                                        if (lessonFilterTo && d) {
-                                            const to = new Date(lessonFilterTo);
-                                            to.setHours(23, 59, 59, 999);
-                                            if (d > to) return false;
-                                        }
-                                        return true;
-                                    })
+                        <div className="admin-table-wrap">
+                            <div className="admin-lessons-card">
+                                {lessons.filter((l) => {
+                                    if (lessonFilterTeacher && String(l.teacher_user_id) !== String(lessonFilterTeacher)) return false;
+                                    if (lessonFilterStudent && String(l.student_id) !== String(lessonFilterStudent)) return false;
+                                    if (lessonFilterStatus && l.status !== lessonFilterStatus) return false;
+
+                                    const d = l.scheduled_start ? new Date(l.scheduled_start) : null
+                                    if (lessonFilterFrom && d && d < new Date(lessonFilterFrom)) return false;
+                                    if (lessonFilterTo && d) {
+                                        const to = new Date(lessonFilterTo);
+                                        to.setHours(23, 59, 59, 999);
+                                        if (d > to) return false;
+                                    }
+                                    return true;
+                                })
+
                                     .map((l) => {
-                                        const teacher = teachers.find(
-                                            (t) => (t.id ?? t.user_id) === l.teacher_user_id
-                                        );
                                         const student = students.find((s) => s.id === l.student_id);
-                                        const statusColor =
-                                            {
-                                                PLANNED: "#2563eb",
-                                                PENDING_CONFIRMATION: "#b45309",
-                                                COMPLETED: "#15803d",
-                                                CANCELLED: "#b91c1c",
-                                                MISSED: "#6b7280",
-                                            }[l.status] || "#111827";
+
+                                        const statusColor = {
+                                            PLANNED: "#2563eb",
+                                            PENDING_CONFIRMATION: "#b45309",
+                                            COMPLETED: "#15803d",
+                                            CANCELLED: "#b91c1c",
+                                            MISSED: "#6b7280",
+                                        }[l.status] || "#111827";
+
                                         return (
-                                            <tr key={l.id}>
-                                                <td>
-                                                    {l.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
-                                                </td>
-                                                <td>{teacher?.full_name || `#${l.teacher_user_id}`}</td>
-                                                <td>{student?.full_name || `#${l.student_id}`}</td>
-                                                <td>{l.duration_min} dk</td>
-                                                <td>{l.mode}</td>
-                                                <td style={{ color: statusColor, fontWeight: 600 }}>
-                                                    {l.status}
-                                                </td>
-                                                <td>{l.teacher_mark_note || "-"}</td>
-                                                <td>{l.teacher_marked_at ? "Evet" : "-"}</td>
-                                                <td>{l.student_marked_at ? "Evet" : "-"}</td>
-                                                <td>
-                                                    {l.cancelled_by_role
-                                                        ? `${l.cancelled_by_role}`
-                                                        : "-"}
-                                                </td>
-                                                <td>
-                                                    <button
-                                                        onClick={() => onCancelLesson(l.id)}
-                                                        disabled={l.status === "CANCELLED"}
-                                                    >
+                                            <div key={l.id} className="admin-lesson-card">
+                                                <div className="admin-lesson-top">
+                                                    <div className="admin-lesson-date">
+                                                        {l.scheduled_start?.replace("T", " ").slice(0, 16) || "-"}
+
+                                                    </div>
+                                                    <span className="admin-lesson-status" style={{ background: statusColor + "22", color: statusColor }}>
+                                                        {l.status}
+                                                    </span>
+                                                </div>
+
+                                                <div className="admin-lesson-grid">
+                                                    <div><span>Öğretmen</span><strong>{teacherById.get(String(l.teacher_user_id)) || "-"} (#{l.teacher_user_id})</strong></div>
+                                                    <div><span>Öğrenci</span><strong>{studentById.get(String(l.student_id)) || "—"} (#{l.student_id})</strong></div>
+                                                    <div><span>Süre</span><strong>{l.duration_min} dk</strong></div>
+                                                    <div><span>Mod</span><strong>{l.mode || "-"}</strong></div>
+                                                    <div><span>Öğrt. Notu</span><strong>{l.teacher_mark_note || "-"}</strong></div>
+                                                    <div><span>Öğrt. Onay</span><strong>{l.teacher_marked_at ? "Evet" : "-"}</strong></div>
+                                                    <div><span>Öğr. Onay</span><strong>{l.student_marked_at ? "Evet" : "-"}</strong></div>
+                                                    <div><span>İptal Eden</span><strong>{l.cancelled_by_role || "-"}</strong></div>
+                                                </div>
+
+                                                <div className="admin-lesson-actions">
+                                                    <button onClick={() => onCancelLesson(l.id)} disabled={l.status === "CANCELLED"} >
                                                         İptal
                                                     </button>
                                                     <button onClick={() => onDeleteLesson(l.id)}>Sil</button>
-                                                </td>
-                                            </tr>
+                                                </div>
+
+
+
+                                            </div>
+
                                         );
+
+
                                     })}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
                     )}
 
                     {/* Teacher Earnings */}
@@ -839,6 +830,8 @@ export default function AdminPage() {
                         </tbody>
                     </table>
                 </div>
+
+
             )}
 
             {/* PACKAGES TAB */}

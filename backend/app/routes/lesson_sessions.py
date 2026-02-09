@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.database import db
 from app.models.lesson_session import LessonSession, SessionMode, SessionStatus
+from app.models.lesson_report import LessonReport
 from app.models.package import StudentPackage, PackageStatus
 from app.models.student import Student
 from app.models.enrollment import Enrollment, EnrollmentStatus
@@ -429,6 +430,8 @@ def delete_lesson_session(session_id: int):
         return jsonify({"message": "LessonSession not found"}), 404
 
     try:
+        # Reports reference lesson_sessions via FK; remove dependents first.
+        LessonReport.query.filter_by(lesson_session_id=session_id).delete(synchronize_session=False)
         db.session.delete(s)
         db.session.commit()
     except Exception as ex:

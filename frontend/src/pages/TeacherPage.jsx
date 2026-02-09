@@ -160,7 +160,10 @@ export default function TeacherPage() {
             setSessionTopic("");
             await loadSessions();
         } catch (ex) {
-            setSessionErr(ex?.message || "Ders oluşturma hatası");
+            console.log("CREATE SESSION ERROR", ex);
+            console.log("status:", ex?.status);
+            console.log("data:", ex?.data);
+            setSessionErr(ex?.data?.message || ex?.message || "Ders oluşturma hatası");
         }
     }
 
@@ -280,9 +283,18 @@ export default function TeacherPage() {
     const studentNameById = new Map(students.map((s) => [s.id, s.full_name]));
     const activeStudentPackage = studentPackages.find((sp) => sp.status === "ACTIVE") || studentPackages[0];
     const remainingForSession = activeStudentPackage?.remaining_lessons;
+    const hasActivePackage = Boolean(activeStudentPackage && activeStudentPackage.status === "ACTIVE");
+    const canCreateSession = Boolean(
+        sessionStudentId &&
+        sessionDate &&
+        sessionTime &&
+        hasActivePackage &&
+        Number(remainingForSession) > 0
+    );
 
     const pendingTeacher = sessions.filter((s) => !s.teacher_marked_at && !["CANCELLED", "MISSED", "COMPLETED"].includes(s.status));
     const pendingStudent = sessions.filter((s) => s.teacher_marked_at && !s.student_marked_at && s.status === "PENDING_CONFIRMATION");
+    const totalPending = pendingTeacher.length + pendingStudent.length;
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthCompleted = sessions.filter((s) => {
@@ -321,15 +333,33 @@ export default function TeacherPage() {
     }
 
     function toKey(d) {
-        return d.toISOString().slice(0, 10);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+    }
+
+    function toDateKey(value) {
+        if (!value) return null;
+        const d = new Date(value);
+        if (!Number.isNaN(d.getTime())) return toKey(d);
+        const raw = String(value);
+        const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+        return m ? m[1] : null;
     }
 
     function mergeCalendarItems() {
         const items = [];
+        const now = new Date();
         sessions.forEach((s) => {
             if (!s.scheduled_start) return;
+            if (["COMPLETED", "CANCELLED", "MISSED"].includes(s.status)) return;
+            const dt = new Date(s.scheduled_start);
+            if (Number.isNaN(dt.getTime()) || dt < now) return;
+            const dateKey = toDateKey(s.scheduled_start);
+            if (!dateKey) return;
             items.push({
-                date: s.scheduled_start.slice(0, 10),
+                date: dateKey,
                 time: formatTimePart(s.scheduled_start),
                 title: s.topic ? `Ders: ${s.topic}` : "Ders",
                 type: "lesson",
@@ -337,8 +367,10 @@ export default function TeacherPage() {
         });
         externalEvents.forEach((e) => {
             if (!e.start) return;
+            const dateKey = toDateKey(e.start);
+            if (!dateKey) return;
             items.push({
-                date: e.start.slice(0, 10),
+                date: dateKey,
                 time: formatTimePart(e.start),
                 title: e.summary || "Etkinlik",
                 type: "external",
@@ -710,7 +742,7 @@ export default function TeacherPage() {
                     {tab === "calendar" && (
                         <div className="calendar-wrap" style={{ marginTop: 24 }}>
                             <div className="calendar-header">
-                                <h3 style={{ margin: 0 }}>Takvim (Ders + Google)</h3>
+                                <h3 style={{ margin: 0 }}>Ders Takvimi</h3>
                                 <div className="page-actions">
                                     <button onClick={() => setMonthOffset((m) => m - 1)}>‹</button>
                                     <button onClick={() => setMonthOffset(0)}>Bugün</button>
@@ -732,12 +764,14 @@ export default function TeacherPage() {
                                         </div>
                                         <div className="calendar-grid">
                                             {days.map((d, idx) => {
-                                                if (!d) return <div key={`e-${idx}`} className="calendar-cell" />;
+                                                if (!d) return <div key={`e-${idx}`} className="calendar-cell is-empty" />;
                                                 const key = toKey(d);
                                                 const dayItems = byDate.get(key) || [];
                                                 return (
                                                     <div key={key} className="calendar-cell">
-                                                        <div className="calendar-day">{d.getDate()}</div>
+                                                        <div className="calendar-day">
+                                                            {d.toLocaleDateString([], { day: "numeric", month: "long", weekday: "long" })}
+                                                        </div>
                                                         {dayItems.map((it, i) => (
                                                             <span key={`${key}-${i}`} className={`calendar-item ${it.type}`}>
                                                                 {it.time} · {it.title}
