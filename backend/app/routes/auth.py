@@ -1,3 +1,8 @@
+# Auth modülünde /api/auth/login endpoint’imiz var.
+# Email ve şifreyi alıp validate ediyoruz, kullanıcıyı DB’den buluyoruz, hashlenmiş şifreyi doğruluyoruz.
+# Hesap aktifse kullanıcının rolünü alıp JWT token üretiyoruz ve frontend’e token ile birlikte temel kullanıcı bilgisini dönüyoruz.
+# Frontend token’ı Authorization Bearer olarak sonraki isteklerde kullanıyor
+
 from flask import request, jsonify
 from werkzeug.security import check_password_hash
 from app.models.user import User

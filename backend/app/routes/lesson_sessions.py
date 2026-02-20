@@ -1,3 +1,11 @@
+#lesson_sessions modülü derslerin tüm yaşam döngüsünü yönetiyor.
+# Listeleme ve detay görüntüleme rol bazlı kısıtlı. 
+# Ders oluşturma sadece teacher/admin tarafından yapılabiliyor; teacher yalnızca kendi öğrencisi için ve aktif pakette kalan hakkı varsa oluşturabiliyor, aksi halde 409 dönüyor. 
+# Teacher-mark ve student-mark ile iki taraflı doğrulama var; ikisi de onaylayınca ders COMPLETED oluyor ve ders hakkı düşürülüyor.
+# Cancel endpoint’inde öğrenci 2 saat kala iptal ederse hak düşüyor, öğretmen iptal ederse düşmüyor. 
+# Status geçişleri de state-machine gibi allowed transitions ile kontrol ediliyor.
+
+
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.exc import IntegrityError

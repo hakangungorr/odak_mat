@@ -1,3 +1,5 @@
+# “Bu dosya backend’in omurgası: config + CORS + DB + migrations + tüm API route’larını bağlayıp uygulamayı ayağa kaldırıyor.”
+
 import os
 from flask import Flask
 from config import Config

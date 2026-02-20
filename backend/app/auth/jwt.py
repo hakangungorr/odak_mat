@@ -1,3 +1,5 @@
+#“Login başarılı olduğunda JWT üretiyoruz. Token içinde user_id, role, iat ve exp claim’leri var. Secret environment’tan alınıyor ve HS256 ile imzalanıyor. Her protected endpoint’te token decode edilerek kullanıcı kimliği ve rolü doğrulanıyor. Sistem stateless çalışıyor, server-side session yok.”
+
 from datetime import datetime, timedelta, timezone
 import os
 

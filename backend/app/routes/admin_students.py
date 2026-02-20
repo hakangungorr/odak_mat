@@ -1,3 +1,7 @@
+#Admin_students modülünde sadece ADMIN erişebiliyor. 
+# Admin yeni öğrenci hesabı açarken users tablosuna user oluşturuyor, flush ile ID alıp students tablosuna öğrenci profilini bağlıyor ve tek transaction ile commit ediyor.
+#  Silme tarafında geçmiş kayıtları bozmamak için student’ı soft delete ediyoruz, user’ı pasifleştiriyoruz ve paket kayıtlarını temizleyerek aktif listelerden düşürüyoruz.
+    
 from flask import Blueprint, request, jsonify, g
 from werkzeug.security import generate_password_hash
 from sqlalchemy.exc import IntegrityError

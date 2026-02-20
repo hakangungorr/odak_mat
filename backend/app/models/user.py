@@ -1,3 +1,5 @@
+#“User modeli users tablosunu temsil ediyor. Email unique ve indexli; şifreler password_hash olarak güvenli biçimde saklanıyor. Kullanıcı rol sistemiyle Role tablosuna foreign key ile bağlı ve role bilgisi joined olarak çekiliyor. set_password/check_password ile hashleme-doğrulama yapıyoruz, has_role ile de endpointlerde yetki kontrolünü kolaylaştırıyoruz. Ayrıca is_active ve deleted_at ile hesap pasifleştirme/soft delete desteği var.”
+
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.database import db
 from app.models.base import BaseModel

@@ -426,7 +426,7 @@ export default function AdminPage() {
                                             {t.full_name || t.name || "İsimsiz öğretmen"}
                                         </div>
                                         <div>{t.email || ""}</div>
-                                        <div>📞 {t.phones || "-"}</div>
+                                        <div>{t.phones || "-"}</div>
                                         <div>
                                             💰 Ücret/Ders: {t.teacher_rate ?? "-"}₺
                                         </div>

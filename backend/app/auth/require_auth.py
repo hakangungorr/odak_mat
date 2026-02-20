@@ -1,3 +1,10 @@
+#“Protected endpoint’lerde require_auth decorator kullanıyoruz. 
+# Authorization header’daki Bearer token’ı alıp decode ediyoruz, expire ve signature kontrolü yapıyoruz. 
+# Token içindeki user_id ile DB’den kullanıcıyı tekrar çekiyoruz; is_active ve rol kontrolü yapıyoruz.
+#  Request context’e g.user_id ve g.role koyarak endpoint içinde yetkilendirme yapabiliyoruz. 
+# Sistem stateless çalışıyor.”
+
+
 from functools import wraps
 from flask import request, jsonify, g
 import jwt as pyjwt
